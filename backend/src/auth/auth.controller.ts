@@ -1,7 +1,10 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { CookieOptions, Response } from 'express';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { RegisterDto } from './dto/register.dto.js';
+import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import type { AuthUser } from './auth.types.js';
 
@@ -18,6 +21,21 @@ const cookieOptions: CookieOptions = {
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
+
+  @Post('register')
+  async register(
+    @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const { accessToken, user } = await this.auth.register(
+      dto.name,
+      dto.email,
+      dto.password,
+      dto.confirmPassword,
+    );
+    response.cookie(COOKIE, accessToken, cookieOptions);
+    return { user };
+  }
 
   @Post('login')
   async login(
@@ -43,6 +61,36 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   me(@Req() request: { user: AuthUser }) {
-    return request.user;
+    return this.auth.getProfile(request.user.id);
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(
+    @Req() request: { user: AuthUser },
+    @Body() dto: UpdateProfileDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const { accessToken, user } = await this.auth.updateProfile(
+      request.user.id,
+      dto.name,
+      dto.phone,
+    );
+    response.cookie(COOKIE, accessToken, cookieOptions);
+    return { user };
+  }
+
+  @Patch('password')
+  @UseGuards(JwtAuthGuard)
+  changePassword(
+    @Req() request: { user: AuthUser },
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.auth.changePassword(
+      request.user.id,
+      dto.currentPassword,
+      dto.newPassword,
+      dto.confirmPassword,
+    );
   }
 }

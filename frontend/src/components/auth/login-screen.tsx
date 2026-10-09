@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { PasswordField } from "@/components/auth/password-field";
 import { api, type LoginResponse } from "@/lib/api";
 
 const DEMO_ACCOUNTS = [
@@ -68,15 +69,11 @@ export function LoginScreen() {
             <span className="text-[10px] font-semibold text-[#44546f]">
               Mật khẩu
             </span>
-            <input
-              type="password"
-              required
-              minLength={8}
+            <PasswordField
+              value={password}
+              onChange={setPassword}
               autoComplete="current-password"
               placeholder="Ít nhất 8 ký tự"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="h-10 rounded border border-[#c7cdd6] px-2.5 text-xs outline-none focus:border-[#0c66e4] focus:shadow-[0_0_0_1px_#0c66e4]"
             />
           </label>
           <Link
