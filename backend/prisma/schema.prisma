@@ -13,7 +13,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Placeholder model — replace after `npx prisma db pull` or your real schema
+enum Role {
+  ADMIN
+  LEADER
+  MEMBER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
 model HealthCheck {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now()) @map("created_at")

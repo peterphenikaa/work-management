@@ -1,23 +1,37 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
+import axios from "axios";
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+export const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api",
+  withCredentials: true,
+  timeout: 15000,
+});
 
-  if (!res.ok) {
-    throw new Error(`API ${res.status}: ${res.statusText}`);
-  }
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const message = axios.isAxiosError(error)
+      ? error.response?.data?.message
+      : undefined;
+    const text = Array.isArray(message) ? message[0] : message;
+    return Promise.reject(
+      new Error(
+        typeof text === "string" && text
+          ? text
+          : "Không kết nối được máy chủ",
+      ),
+    );
+  },
+);
 
-  return res.json() as Promise<T>;
-}
+export type Role = "ADMIN" | "LEADER" | "MEMBER";
 
-export type HealthResponse = {
-  status: "ok" | "degraded";
-  database: "up" | "down";
-  timestamp: string;
+export type AuthUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+};
+
+export type LoginResponse = {
+  user: AuthUser;
 };
