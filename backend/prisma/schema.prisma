@@ -1,0 +1,22 @@
+// Prisma schema — connect to Supabase PostgreSQL
+// Docs: https://pris.ly/d/prisma-schema
+//
+// Local app + production DB: use Session mode (port 5432) for migrations,
+// Transaction pooler (6543) for app runtime if needed.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Placeholder model — replace after `npx prisma db pull` or your real schema
+model HealthCheck {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("health_checks")
+}
