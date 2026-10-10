@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, Suspense, useContext, useEffect, useState } from "react";
 import { api, type AuthUser } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
 import { UserMenu } from "@/components/shell/user-menu";
@@ -49,7 +49,23 @@ const nav = [
   },
 ];
 
+function ShellLoading() {
+  return (
+    <main className="grid min-h-full flex-1 place-items-center bg-[#f7f8f9] text-sm text-[#626f86]">
+      Đang mở phiên làm việc…
+    </main>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<ShellLoading />}>
+      <AppShellFrame>{children}</AppShellFrame>
+    </Suspense>
+  );
+}
+
+function AppShellFrame({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -62,11 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   if (!user) {
-    return (
-      <main className="grid min-h-full flex-1 place-items-center bg-[#f7f8f9] text-sm text-[#626f86]">
-        Đang mở phiên làm việc…
-      </main>
-    );
+    return <ShellLoading />;
   }
 
   const mark = initials(user.name);

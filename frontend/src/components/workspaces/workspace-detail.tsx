@@ -170,8 +170,8 @@ export function WorkspaceDetail() {
 
   return (
     <section className="min-h-0 flex-1 overflow-y-auto px-8 pt-7 pb-10">
-      <Link href="/workspaces" className="inline-flex h-7 items-center gap-1.5 rounded-[4px] px-1.5 text-[13px] font-semibold text-[#626f86] hover:bg-[#f7f8f9]">
-        <ChevronLeft size={16} />
+      <Link href="/workspaces" className="inline-flex h-7 items-center gap-1 text-[13px] font-semibold text-[#626f86] hover:text-[#172b4d]">
+        <ChevronLeft size={16} className="-ml-1.5" />
         Quay lại Workspaces
       </Link>
 
@@ -199,7 +199,11 @@ export function WorkspaceDetail() {
           <div className="mt-6 grid overflow-hidden rounded-[8px] border border-[#dfe1e6] lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,1fr)]">
             <div className="flex items-center gap-4 border-[#dfe1e6] px-[22px] py-5 lg:border-r">
               <span className="grid size-[50px] shrink-0 place-items-center overflow-hidden rounded-[10px] bg-gradient-to-br from-[#0c66e4] to-[#0052cc] text-[16px] font-bold text-white">
-                {iconSrc ? <img src={iconSrc} alt="" className="size-[50px] object-cover" /> : mark}
+                {iconSrc ? (
+                  <img src={iconSrc} alt="" draggable={false} className="size-[50px] object-cover" />
+                ) : (
+                  mark
+                )}
               </span>
               <span className="min-w-0">
                 <span className="inline-flex rounded-[3px] bg-[#f3f0ff] px-1.5 py-0.5 text-[11px] font-bold tracking-wide text-[#5e4db2]">
@@ -241,7 +245,11 @@ export function WorkspaceDetail() {
                 <div className="p-4">
                   <div className="flex h-14 items-center gap-2.5 rounded-[6px] border border-[#dfe1e6] bg-[#f7f8f9] px-2.5">
                     <span className="grid size-[34px] place-items-center overflow-hidden rounded-[7px] bg-gradient-to-br from-[#0c66e4] to-[#0052cc] text-[12px] font-bold text-white">
-                      {iconSrc ? <img src={iconSrc} alt="" className="size-[34px] object-cover" /> : mark}
+                      {iconSrc ? (
+                        <img src={iconSrc} alt="" draggable={false} className="size-[34px] object-cover" />
+                      ) : (
+                        mark
+                      )}
                     </span>
                     <span>
                       <span className="block text-[13px] font-bold text-[#172b4d]">{item.name}</span>
@@ -254,7 +262,7 @@ export function WorkspaceDetail() {
                         className="grid size-[28px] place-items-center rounded-[6px]"
                         style={{ backgroundColor: spaceSwatch(space.color) }}
                       >
-                        <img src={spaceIcon(space.icon)} alt="" width={18} height={18} className="brightness-0 invert" />
+                        <img src={spaceIcon(space.icon)} alt="" width={18} height={18} draggable={false} className="brightness-0 invert" />
                       </span>
                       <span>
                         <span className="block text-[13px] font-bold text-[#172b4d]">{space.name}</span>
