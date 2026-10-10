@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PasswordField } from "@/components/auth/password-field";
-import { api, type LoginResponse } from "@/lib/api";
+import { ApiError, api, type LoginResponse } from "@/lib/api";
 
 const DEMO_ACCOUNTS = [
   { role: "Admin", email: "admin@northstar.vn", password: "Northstar1" },
@@ -17,18 +17,40 @@ export function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError(null);
+    setWaiting(null);
+    const hint = window.setTimeout(() => setWaiting("Máy chủ đang mở lại sau lúc nghỉ."), 4000);
     try {
-      await api.post<LoginResponse>("/auth/login", { email, password });
-      router.push("/home");
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await api.post<LoginResponse>("/auth/login", { email, password }, { timeout: 40000 });
+          window.clearTimeout(hint);
+          setWaiting(null);
+          router.push("/home");
+          return;
+        } catch (err) {
+          const asleep = err instanceof ApiError && err.asleep;
+          if (!asleep || attempt === 2) throw err;
+          setWaiting("Máy chủ đang thức dậy. Đang thử lại…");
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        }
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không đăng nhập được");
+      if (err instanceof ApiError && err.asleep) {
+        setWaiting(err.message);
+        setError(null);
+      } else {
+        setWaiting(null);
+        setError(err instanceof Error ? err.message : "Không đăng nhập được");
+      }
     } finally {
+      window.clearTimeout(hint);
       setLoading(false);
     }
   }
@@ -82,17 +104,18 @@ export function LoginScreen() {
           >
             Quên mật khẩu?
           </Link>
-          {error && (
-            <p className="rounded bg-[#ffedeb] px-2.5 py-2 text-[11px] text-[#ca3521]">
-              {error}
-            </p>
-          )}
+          {waiting ? (
+            <p className="rounded bg-[#fff7d6] px-2.5 py-2 text-[11px] leading-5 text-[#7f5f01]">{waiting}</p>
+          ) : null}
+          {error ? (
+            <p className="rounded bg-[#ffedeb] px-2.5 py-2 text-[11px] text-[#ca3521]">{error}</p>
+          ) : null}
           <button
             type="submit"
             disabled={loading}
             className="mt-1 h-10 rounded bg-[#0c66e4] text-[13px] font-semibold text-white hover:bg-[#0052cc] disabled:opacity-60"
           >
-            {loading ? "Đang đăng nhập…" : "Đăng nhập"}
+            {loading ? (waiting ? "Đang chờ máy chủ…" : "Đang đăng nhập…") : "Đăng nhập"}
           </button>
         </form>
 

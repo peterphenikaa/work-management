@@ -25,64 +25,10 @@ export class ReportsService {
     }
 
     const workspaceFilter = workspaceId ? [workspaceId] : allowed;
-    const [options, rows] = await Promise.all([
-      this.options(workspaceFilter, workspaceId),
-      workspaceFilter && workspaceFilter.length === 0
-        ? Promise.resolve([])
-        : this.prisma.task.findMany({
-            where: {
-              deletedAt: null,
-              ...(assigneeId ? { assigneeId } : {}),
-              space: {
-                deletedAt: null,
-                ...(spaceId ? { id: spaceId } : {}),
-                workspace: {
-                  deletedAt: null,
-                  ...(workspaceFilter ? { id: { in: workspaceFilter } } : {}),
-                },
-              },
-              OR: [
-                { createdAt: { gte: range.start, lte: range.end } },
-                { updatedAt: { gte: range.start, lte: range.end } },
-                { dueAt: { lte: range.end } },
-              ],
-            },
-            include: {
-              status: { select: { name: true } },
-              assignee: { select: { id: true, name: true } },
-              reporter: { select: { name: true } },
-              list: { select: { name: true } },
-              space: {
-                select: {
-                  id: true,
-                  name: true,
-                  workspace: { select: { id: true, name: true } },
-                },
-              },
-            },
-            orderBy: { updatedAt: 'desc' },
-            take: TASK_TAKE,
-          }),
-    ]);
+    const options = await this.options(workspaceFilter, workspaceId);
+    const rows = await this.loadTasks(workspaceFilter, spaceId, assigneeId);
 
-    const tasks: ReportTask[] = rows.map((row) => ({
-      id: row.id,
-      code: row.code,
-      title: row.title,
-      priority: row.priority,
-      dueAt: row.dueAt,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      statusName: row.status.name,
-      assigneeId: row.assignee?.id ?? null,
-      assigneeName: row.assignee?.name ?? null,
-      reporterName: row.reporter.name,
-      workspaceId: row.space.workspace.id,
-      workspaceName: row.space.workspace.name,
-      spaceId: row.space.id,
-      spaceName: row.space.name,
-      listName: row.list.name,
-    }));
+    const tasks: ReportTask[] = rows;
 
     return aggregateReport({
       tasks,
@@ -265,12 +211,14 @@ export class ReportsService {
           },
         },
         select: { user: { select: { id: true, name: true } } },
-        orderBy: { user: { name: 'asc' } },
       }),
     ]);
 
     const members = new Map<string, { id: string; name: string }>();
-    for (const row of memberships) members.set(row.user.id, row.user);
+    for (const row of memberships) {
+      if (row.user) members.set(row.user.id, row.user);
+    }
+    const memberList = [...members.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 
     return {
       workspaces,
@@ -280,7 +228,68 @@ export class ReportsService {
         workspaceId: space.workspaceId,
         workspaceName: space.workspace.name,
       })),
-      members: [...members.values()],
+      members: memberList,
     };
+  }
+
+  private async loadTasks(workspaceFilter: string[] | null, spaceId: string | null, assigneeId: string | null) {
+    if (workspaceFilter && workspaceFilter.length === 0) return [];
+    const spaces = await this.prisma.space.findMany({
+      where: {
+        deletedAt: null,
+        ...(spaceId ? { id: spaceId } : {}),
+        workspace: {
+          deletedAt: null,
+          ...(workspaceFilter ? { id: { in: workspaceFilter } } : {}),
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        workspace: { select: { id: true, name: true } },
+      },
+    });
+    if (spaces.length === 0) return [];
+    const spaceById = new Map(spaces.map((space) => [space.id, space]));
+    const rows = await this.prisma.task.findMany({
+      where: {
+        deletedAt: null,
+        spaceId: { in: [...spaceById.keys()] },
+        ...(assigneeId ? { assigneeId } : {}),
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: TASK_TAKE,
+      include: {
+        status: { select: { name: true } },
+        assignee: { select: { id: true, name: true } },
+        reporter: { select: { name: true } },
+        list: { select: { name: true } },
+      },
+    });
+
+    const tasks: ReportTask[] = [];
+    for (const row of rows) {
+      const space = spaceById.get(row.spaceId);
+      if (!space || !row.status || !row.list || !row.reporter) continue;
+      tasks.push({
+        id: row.id,
+        code: row.code,
+        title: row.title,
+        priority: row.priority,
+        dueAt: row.dueAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        statusName: row.status.name,
+        assigneeId: row.assignee?.id ?? null,
+        assigneeName: row.assignee?.name ?? null,
+        reporterName: row.reporter.name,
+        workspaceId: space.workspace.id,
+        workspaceName: space.workspace.name,
+        spaceId: space.id,
+        spaceName: space.name,
+        listName: row.list.name,
+      });
+    }
+    return tasks;
   }
 }
