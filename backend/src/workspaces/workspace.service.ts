@@ -444,12 +444,14 @@ export class WorkspaceService {
       throw new BadRequestException('Chỉ nhận PNG hoặc JPG, tối đa 2 MB');
     }
 
+    const bytes = new Uint8Array(file.buffer.byteLength);
+    bytes.set(file.buffer);
     await this.prisma.$transaction([
       this.prisma.workspace.update({ where: { id }, data: { iconMime: mime } }),
       this.prisma.workspaceIcon.upsert({
         where: { workspaceId: id },
-        create: { workspaceId: id, data: file.buffer },
-        update: { data: file.buffer },
+        create: { workspaceId: id, data: bytes },
+        update: { data: bytes },
       }),
     ]);
     return { ok: true };

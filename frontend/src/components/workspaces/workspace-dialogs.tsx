@@ -110,6 +110,7 @@ function WorkspaceEditor({
   const [inviting, setInviting] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [iconFile, setIconFile] = useState<File | null>(null);
+  const [updatedAt, setUpdatedAt] = useState(item?.updatedAt ?? "");
   const iconFileRef = useRef<File | null>(null);
   const [ready, setReady] = useState(mode === "create");
   const [saving, setSaving] = useState(false);
@@ -283,17 +284,18 @@ function WorkspaceEditor({
     try {
       let workspaceId = item?.id;
       if (mode === "edit" && item) {
-        await api.patch(`/workspaces/${item.id}`, {
+        const patched = await api.patch<{ updatedAt: string }>(`/workspaces/${item.id}`, {
           name: name.trim(),
           description: description.trim(),
           accessType,
           ownerId,
-          updatedAt: item.updatedAt,
+          updatedAt,
           members: members.map((row) => ({
             userId: row.userId,
             role: row.userId === ownerId ? "ADMIN" : row.role,
           })),
         });
+        setUpdatedAt(patched.data.updatedAt);
       } else {
         const created = await api.post<{ id: string }>("/workspaces", {
           name: name.trim(),
