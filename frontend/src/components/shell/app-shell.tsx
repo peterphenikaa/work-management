@@ -2,13 +2,13 @@
 
 import {
   Bell,
+  Building2,
   ChartColumn,
-  ChevronDown,
-  FolderKanban,
+  CircleUser,
+  Ellipsis,
   LayoutGrid,
-  Plus,
   Search,
-  Shield,
+  Settings,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 import { api, type AuthUser } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
+import { UserMenu } from "@/components/shell/user-menu";
 
 const ShellUserContext = createContext<AuthUser | null>(null);
 
@@ -31,14 +32,20 @@ const nav = [
   {
     label: "Quản trị",
     items: [
-      { href: null, label: "Workspaces", icon: FolderKanban },
-      { href: null, label: "Thành viên", icon: Users },
-      { href: null, label: "Phân quyền", icon: Shield },
+      { href: "/workspaces", label: "Workspaces", icon: Building2 },
+      { href: null, label: "Thành viên & Phân quyền", icon: Users },
     ],
   },
   {
     label: "Phân tích",
     items: [{ href: null, label: "Báo cáo", icon: ChartColumn }],
+  },
+  {
+    label: "Tài khoản",
+    items: [
+      { href: "/profile", label: "Hồ sơ cá nhân", icon: CircleUser },
+      { href: "/settings", label: "Cài đặt", icon: Settings },
+    ],
   },
 ];
 
@@ -67,78 +74,52 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ShellUserContext.Provider value={user}>
       <div className="flex min-h-full flex-1 flex-col bg-white text-[#172b4d]">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#dfe1e6] bg-white px-3">
-          <button
-            type="button"
-            aria-label="Trình đơn ứng dụng"
-            className="grid size-8 place-items-center rounded text-[#44546f] hover:bg-[#f1f2f4]"
-          >
-            <LayoutGrid size={18} />
-          </button>
-          <span className="grid size-7 place-items-center rounded bg-[#0c66e4] text-sm font-bold text-white">
+        <header className="grid h-16 shrink-0 grid-cols-[1fr_minmax(0,440px)_1fr] items-center border-b border-[#dfe1e6] bg-white px-5">
+          <span className="grid size-7 place-items-center justify-self-start rounded-[6px] bg-gradient-to-br from-[#0c66e4] to-[#0747a6] text-sm font-bold text-white">
             W
           </span>
-          <button
-            type="button"
-            className="flex h-8 shrink-0 items-center gap-1 rounded px-2 text-sm font-semibold whitespace-nowrap hover:bg-[#f1f2f4]"
-          >
-            Không gian Northstar
-            <ChevronDown size={16} className="text-[#626f86]" />
-          </button>
 
-          <label className="relative mx-auto hidden w-full max-w-[420px] md:block">
-            <Search size={16} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#626f86]" />
+          <label className="relative h-9 w-full">
+            <Search size={15} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#172b4d]" />
             <input
               readOnly
               placeholder="Tìm kiếm hoặc chuyển nhanh..."
-              className="h-9 w-full rounded-md border border-transparent bg-[#f4f5f7] pr-3 pl-9 text-[13px] outline-none placeholder:text-[#626f86] focus:border-[#0c66e4] focus:bg-white"
+              className="h-9 w-full rounded-[5px] border border-[#c7cdd6] bg-[#f7f8f9] pr-3 pl-9 text-[13px] outline-none placeholder:text-[#7a869a]"
             />
           </label>
 
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              className="flex h-8 items-center gap-1 rounded bg-[#0c66e4] px-3 text-[13px] font-semibold whitespace-nowrap text-white hover:bg-[#0052cc]"
-            >
-              <Plus size={16} />
-              Tạo mới
-            </button>
+          <div className="flex items-center justify-end gap-3">
             <button
               type="button"
               aria-label="Thông báo"
-              className="grid size-8 place-items-center rounded text-[#44546f] hover:bg-[#f1f2f4]"
+              className="relative grid size-8 place-items-center text-[#626f86]"
             >
               <Bell size={18} />
+              <span className="absolute top-1 right-1 size-2 rounded-full bg-[#ca3521] ring-2 ring-white" />
             </button>
-            <span className="hidden text-[13px] whitespace-nowrap text-[#44546f] sm:inline">
-              {ROLE_LABEL[user.role]}
-            </span>
-            <Link
-              href="/profile"
-              aria-label="Hồ sơ cá nhân"
-              className="grid size-8 place-items-center rounded-full bg-[#1d2125] text-[11px] font-semibold text-white"
-            >
-              {mark}
-            </Link>
+            <UserMenu user={user} />
           </div>
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-[232px] shrink-0 flex-col border-r border-[#dfe1e6] bg-[#f7f8f9]">
-            <nav className="flex flex-1 flex-col gap-4 px-2 py-4">
-              {nav.map((group) => (
-                <div key={group.label}>
-                  <p className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-[#626f86] uppercase">
+          <aside className="flex w-[244px] shrink-0 flex-col border-r border-[#dfe1e6] bg-[#f7f8f9]">
+            <nav className="flex flex-1 flex-col px-2.5 pt-5">
+              {nav.map((group, index) => (
+                <div
+                  key={group.label}
+                  className={index === 0 ? "" : "mt-3 border-t border-[#dfe1e6]/70 pt-4"}
+                >
+                  <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-[#7a869a] uppercase">
                     {group.label}
                   </p>
                   <div className="flex flex-col gap-0.5">
                     {group.items.map((item) => {
                       const Icon = item.icon;
                       const active = item.href !== null && pathname === item.href;
-                      const className = `flex h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium ${
+                      const className = `flex h-9 items-center gap-3 rounded-[5px] px-3 text-[14px] ${
                         active
-                          ? "bg-[#e9f2ff] text-[#0c66e4]"
-                          : "text-[#172b4d]"
+                          ? "bg-[#e9f2ff] font-semibold text-[#0052cc] shadow-[inset_3px_0_0_#0c66e4]"
+                          : "font-medium text-[#44546f] hover:bg-[#ebecf0]"
                       }`;
                       const content = (
                         <>
@@ -163,17 +144,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/profile"
-              className="flex items-center gap-2 border-t border-[#dfe1e6] px-3 py-3 hover:bg-[#f1f2f4]"
+              className="flex items-center gap-2.5 border-t border-[#dfe1e6] px-4 py-4 hover:bg-[#f1f2f4]"
             >
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#1d2125] text-[11px] font-semibold text-white">
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#334563] text-[11px] font-semibold text-white">
                 {mark}
               </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[13px] font-semibold">{user.name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-semibold text-[#172b4d]">
+                  {user.name}
+                </span>
                 <span className="block truncate text-[11px] text-[#626f86]">
                   {ROLE_LABEL[user.role]}
                 </span>
               </span>
+              <Ellipsis size={16} className="shrink-0 text-[#626f86]" />
             </Link>
           </aside>
 
