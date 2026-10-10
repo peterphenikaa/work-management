@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { statusBucket, type StatusBucket } from '../common/status-bucket.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'] as const;
@@ -8,16 +9,25 @@ export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   async summary() {
-    const [activeWorkspaces, users] = await Promise.all([
+    const [activeWorkspaces, users, tasks] = await Promise.all([
       this.prisma.workspace.count({ where: { deletedAt: null, status: 'ACTIVE' } }),
       this.prisma.user.findMany({
         select: { id: true, name: true, email: true, role: true },
         orderBy: [{ role: 'asc' }, { name: 'asc' }],
       }),
+      this.prisma.task.findMany({
+        where: { deletedAt: null, space: { deletedAt: null } },
+        select: { status: { select: { name: true } } },
+      }),
     ]);
 
-    const byStatus = Object.fromEntries(TASK_STATUSES.map((status) => [status, 0]));
-    const taskTotal = 0;
+    const byStatus: Record<StatusBucket, number> = Object.fromEntries(
+      TASK_STATUSES.map((status) => [status, 0]),
+    ) as Record<StatusBucket, number>;
+    for (const task of tasks) {
+      byStatus[statusBucket(task.status.name)] += 1;
+    }
+    const taskTotal = tasks.length;
     const taskDone = byStatus.DONE;
 
     return {

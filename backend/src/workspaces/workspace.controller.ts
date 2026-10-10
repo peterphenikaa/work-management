@@ -21,6 +21,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { DeleteWorkspaceDto } from './dto/delete-workspace.dto.js';
 import { InviteMemberDto, UpdateInvitationDto } from './dto/invitation.dto.js';
 import { ListWorkspacesQuery } from './dto/list-workspaces.query.js';
+import { UpdatePersonDto } from './dto/update-person.dto.js';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto.js';
 import { WorkspaceService } from './workspace.service.js';
 
@@ -37,6 +38,20 @@ export class WorkspaceController {
   @Get('people')
   people(@Req() request: { user: AuthUser }) {
     return this.workspaces.people(request.user);
+  }
+
+  @Patch('people/:userId')
+  updatePerson(
+    @Req() request: { user: AuthUser },
+    @Param('userId') userId: string,
+    @Body() dto: UpdatePersonDto,
+  ) {
+    return this.workspaces.updatePerson(request.user, userId, dto);
+  }
+
+  @Delete('people/:userId')
+  removePerson(@Req() request: { user: AuthUser }, @Param('userId') userId: string) {
+    return this.workspaces.removePerson(request.user, userId);
   }
 
   @Get('invitations/mine')

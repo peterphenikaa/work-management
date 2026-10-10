@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { HealthModule } from './health/health.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 import { WorkspaceModule } from './workspaces/workspace.module.js';
 
 @Module({
@@ -17,6 +18,7 @@ import { WorkspaceModule } from './workspaces/workspace.module.js';
     PrismaModule,
     AuthModule,
     DashboardModule,
+    ReportsModule,
     WorkspaceModule,
     HealthModule,
   ],

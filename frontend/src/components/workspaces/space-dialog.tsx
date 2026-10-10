@@ -28,6 +28,7 @@ export type SpaceItem = {
   name: string;
   icon: SpaceIcon;
   color: SpaceColor;
+  listCount?: number;
 };
 
 const ICONS: { id: SpaceIcon; icon: LucideIcon; label: string }[] = [
@@ -113,6 +114,7 @@ function matchesQuery(name: string, email: string, needle: string) {
 
 type StatusDraft = {
   key: string;
+  id?: string;
   name: string;
   category: Category;
   color: string;
@@ -141,32 +143,67 @@ function seatFor(role: Role): Seat {
   return "MEMBER";
 }
 
+export type EditableSpace = {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: SpaceIcon;
+  color: SpaceColor;
+  accessType: "PRIVATE" | "PUBLIC";
+  views: SpaceView[];
+  statuses: { id: string; name: string }[];
+  members: { userId: string; role: Role }[];
+};
+
+function categoryFor(name: string): Category {
+  if (/hoàn/i.test(name)) return "DONE";
+  if (/đang|review/i.test(name)) return "DOING";
+  return "TODO";
+}
+
+const DEFAULT_STATUSES: StatusDraft[] = [
+  { key: "todo", name: "Cần làm", category: "TODO", color: DOTS[0] },
+  { key: "doing", name: "Đang làm", category: "DOING", color: DOTS[1] },
+  { key: "review", name: "Review", category: "DOING", color: DOTS[2] },
+  { key: "done", name: "Hoàn thành", category: "DONE", color: DOTS[3] },
+];
+
+function draftsFrom(space: EditableSpace): StatusDraft[] {
+  return space.statuses.map((status, index) => ({
+    key: status.id,
+    id: status.id,
+    name: status.name,
+    category: categoryFor(status.name),
+    color: DOTS[index % DOTS.length] ?? DOTS[0],
+  }));
+}
+
 export function CreateSpaceDialog({
   workspaceId,
+  space,
   onClose,
   onCreated,
 }: {
   workspaceId: string;
+  space?: EditableSpace | null;
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const editing = space != null;
   const [people, setPeople] = useState<Person[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [icon, setIcon] = useState<SpaceIcon>("ARCHIVE");
-  const [color, setColor] = useState<SpaceColor>("BLUE");
-  const [access, setAccess] = useState<AccessMode>("PUBLIC");
-  const [picked, setPicked] = useState<string[]>([]);
-  const [seats, setSeats] = useState<Record<string, Seat>>({});
+  const [name, setName] = useState(space?.name ?? "");
+  const [description, setDescription] = useState(space?.description ?? "");
+  const [icon, setIcon] = useState<SpaceIcon>(space?.icon ?? "ARCHIVE");
+  const [color, setColor] = useState<SpaceColor>(space?.color ?? "BLUE");
+  const [access, setAccess] = useState<AccessMode>(space?.accessType ?? "PUBLIC");
+  const [picked, setPicked] = useState<string[]>(space?.members.map((member) => member.userId) ?? []);
+  const [seats, setSeats] = useState<Record<string, Seat>>(
+    Object.fromEntries((space?.members ?? []).map((member) => [member.userId, seatFor(member.role)])),
+  );
   const [query, setQuery] = useState("");
-  const [statuses, setStatuses] = useState<StatusDraft[]>([
-    { key: "todo", name: "Cần làm", category: "TODO", color: DOTS[0] },
-    { key: "doing", name: "Đang làm", category: "DOING", color: DOTS[1] },
-    { key: "review", name: "Review", category: "DOING", color: DOTS[2] },
-    { key: "done", name: "Hoàn thành", category: "DONE", color: DOTS[3] },
-  ]);
-  const [views, setViews] = useState<SpaceView[]>(["LIST", "KANBAN"]);
+  const [statuses, setStatuses] = useState<StatusDraft[]>(space ? draftsFrom(space) : DEFAULT_STATUSES);
+  const [views, setViews] = useState<SpaceView[]>(space?.views.length ? space.views : ["LIST", "KANBAN"]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dragIndex = useRef<number | null>(null);
@@ -182,14 +219,20 @@ export function CreateSpaceDialog({
         const items = members.data.items;
         setPeople(items);
         setInvites(invitations.data.items);
-        setPicked(items.map((person) => person.userId));
-        setSeats(Object.fromEntries(items.map((person) => [person.userId, seatFor(person.role)])));
+        setSeats((current) => {
+          const next = { ...current };
+          for (const person of items) {
+            if (!next[person.userId]) next[person.userId] = seatFor(person.role);
+          }
+          return next;
+        });
+        if (!editing) setPicked(items.map((person) => person.userId));
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [workspaceId]);
+  }, [workspaceId, editing]);
 
   const swatch = spaceSwatch(color);
   const Icon = ICONS.find((item) => item.id === icon)?.icon ?? Folder;
@@ -251,19 +294,29 @@ export function CreateSpaceDialog({
     setSaving(true);
     setError("");
     try {
-      await api.post(`/workspaces/${workspaceId}/spaces`, {
+      const payload = {
         name: name.trim(),
         description: description.trim(),
         icon,
         color,
         accessType: access === "PUBLIC" ? "PUBLIC" : "PRIVATE",
         memberIds: picked,
-        statuses: names,
         views,
-      });
+      };
+      if (editing && space) {
+        await api.patch(`/workspaces/${workspaceId}/spaces/${space.id}`, {
+          ...payload,
+          statuses: statuses.map((status) => ({ ...(status.id ? { id: status.id } : {}), name: status.name.trim() })),
+        });
+      } else {
+        await api.post(`/workspaces/${workspaceId}/spaces`, {
+          ...payload,
+          statuses: statuses.map((status) => status.name.trim()),
+        });
+      }
       onCreated();
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Không tạo được Space");
+      setError(reason instanceof Error ? reason.message : editing ? "Không lưu được Space" : "Không tạo được Space");
       setSaving(false);
     }
   }
@@ -272,16 +325,18 @@ export function CreateSpaceDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#091e42]/50 p-4 sm:p-6" onMouseDown={onClose}>
       <div
         role="dialog"
-        aria-labelledby="create-space-title"
+        aria-labelledby="space-editor-title"
         className="flex max-h-[min(900px,calc(100vh-32px))] w-full max-w-[1080px] flex-col overflow-hidden rounded-xl bg-white shadow-[0_18px_50px_rgba(9,30,66,0.28)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="relative shrink-0 px-6 pt-5 pb-3">
-          <h2 id="create-space-title" className="pr-10 text-[20px] font-semibold leading-7 text-[#172b4d]">
-            Tạo Space
+          <h2 id="space-editor-title" className="pr-10 text-[20px] font-semibold leading-7 text-[#172b4d]">
+            {editing ? "Chỉnh sửa Space" : "Tạo Space"}
           </h2>
           <p className="mt-1 text-[13px] leading-5 text-[#626f86]">
-            Thiết lập không gian làm việc mới với các tính năng và quy trình tùy chỉnh.
+            {editing
+              ? "Cập nhật thông tin, thành viên, trạng thái và chế độ xem của Space này."
+              : "Thiết lập không gian làm việc mới với các tính năng và quy trình tùy chỉnh."}
           </p>
           <button
             type="button"
@@ -407,7 +462,7 @@ export function CreateSpaceDialog({
               </div>
 
               <div>
-                <p className="text-[13px] font-semibold text-[#172b4d]">Thành viên khởi tạo</p>
+                <p className="text-[13px] font-semibold text-[#172b4d]">{editing ? "Thành viên Space" : "Thành viên khởi tạo"}</p>
                 <div className="relative mt-2">
                   <Search size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[#626f86]" />
                   <input
@@ -649,7 +704,7 @@ export function CreateSpaceDialog({
             onClick={() => void submit()}
             className="h-9 rounded-md bg-[#0c66e4] px-4 text-[14px] font-semibold text-white hover:bg-[#0055cc] disabled:opacity-50"
           >
-            {saving ? "Đang tạo…" : "Tạo Space"}
+            {saving ? "Đang lưu…" : editing ? "Lưu thay đổi" : "Tạo Space"}
           </button>
         </footer>
       </div>

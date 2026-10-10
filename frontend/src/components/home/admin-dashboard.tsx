@@ -1,6 +1,7 @@
 "use client";
 
 import { Building2, ChartColumn, Sparkles, SquareCheckBig, Users } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, type Role } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
@@ -122,10 +123,10 @@ export function AdminDashboard() {
                 Phân bổ công việc theo trạng thái hiện tại
               </p>
             </div>
-            <span className="flex items-center gap-1 text-[12px] font-medium text-[#626f86]">
+            <Link href="/reports" className="flex items-center gap-1 text-[12px] font-medium text-[#0c66e4] hover:underline">
               <ChartColumn size={14} />
               Xem báo cáo
-            </span>
+            </Link>
           </div>
           <div className="mt-8 flex items-center gap-10">
             <div className="w-[88px] shrink-0 text-center">

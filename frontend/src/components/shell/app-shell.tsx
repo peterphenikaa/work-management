@@ -33,12 +33,12 @@ const nav = [
     label: "Quản trị",
     items: [
       { href: "/workspaces", label: "Workspaces", icon: Building2 },
-      { href: null, label: "Thành viên & Phân quyền", icon: Users },
+      { href: "/members", label: "Thành viên & Phân quyền", icon: Users },
     ],
   },
   {
     label: "Phân tích",
-    items: [{ href: null, label: "Báo cáo", icon: ChartColumn }],
+    items: [{ href: "/reports", label: "Báo cáo", icon: ChartColumn }],
   },
   {
     label: "Tài khoản",
@@ -85,8 +85,8 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
 
   return (
     <ShellUserContext.Provider value={user}>
-      <div className="flex min-h-full flex-1 flex-col bg-white text-[#172b4d]">
-        <header className="grid h-16 shrink-0 grid-cols-[1fr_minmax(0,440px)_1fr] items-center border-b border-[#dfe1e6] bg-white px-5">
+      <div className="flex h-dvh flex-col overflow-hidden bg-white text-[#172b4d] print:block print:h-auto print:overflow-visible">
+        <header className="grid h-16 shrink-0 grid-cols-[1fr_minmax(0,440px)_1fr] items-center border-b border-[#dfe1e6] bg-white px-5 print:hidden">
           <span className="grid size-7 place-items-center justify-self-start rounded-[6px] bg-gradient-to-br from-[#0c66e4] to-[#0747a6] text-sm font-bold text-white">
             W
           </span>
@@ -113,9 +113,9 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1">
-          <aside className="flex w-[244px] shrink-0 flex-col border-r border-[#dfe1e6] bg-[#f7f8f9]">
-            <nav className="flex flex-1 flex-col px-2.5 pt-5">
+        <div className="flex min-h-0 flex-1 print:block">
+          <aside className="flex w-[244px] shrink-0 flex-col overflow-hidden border-r border-[#dfe1e6] bg-[#f7f8f9] print:hidden">
+            <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pt-5">
               {nav.map((group, index) => (
                 <div
                   key={group.label}
@@ -130,7 +130,7 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
                       const active =
                         item.href !== null &&
                         (pathname === item.href || pathname.startsWith(`${item.href}/`));
-                      const className = `flex h-9 items-center gap-3 rounded-[5px] px-3 text-[14px] ${
+                      const className = `flex min-h-9 items-center gap-3 rounded-[5px] px-3 py-2 text-[14px] leading-5 ${
                         active
                           ? "bg-[#e9f2ff] font-semibold text-[#0052cc] shadow-[inset_3px_0_0_#0c66e4]"
                           : "font-medium text-[#44546f] hover:bg-[#ebecf0]"
@@ -158,7 +158,7 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/profile"
-              className="flex items-center gap-2.5 border-t border-[#dfe1e6] px-4 py-4 hover:bg-[#f1f2f4]"
+              className="flex shrink-0 items-center gap-2.5 border-t border-[#dfe1e6] px-4 py-4 hover:bg-[#f1f2f4]"
             >
               <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#334563] text-[11px] font-semibold text-white">
                 {mark}
@@ -175,7 +175,7 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
             </Link>
           </aside>
 
-          <div className="min-w-0 flex-1 bg-white">{children}</div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-white print:h-auto print:overflow-visible">{children}</div>
         </div>
       </div>
     </ShellUserContext.Provider>

@@ -218,7 +218,7 @@ export function WorkspaceDetail() {
             <div className="grid grid-cols-2">
               <Stat label="Ngày tạo" value={formatDate(item.createdAt)} className="border-r border-b" />
               <Stat label="Cập nhật gần nhất" value={formatWhen(item.updatedAt)} className="border-b" />
-              <Stat label="Cấu trúc" value={`${spaces.length} Space · 0 List`} className="border-r" />
+              <Stat label="Cấu trúc" value={`${spaces.length} Space · ${spaces.reduce((sum, space) => sum + (space.listCount ?? 0), 0)} List`} className="border-r" />
               <Stat label="Thành viên" value={`${item.memberCount} tài khoản`} />
             </div>
           </div>
@@ -257,7 +257,11 @@ export function WorkspaceDetail() {
                     </span>
                   </div>
                   {spaces.map((space) => (
-                    <div key={space.id} className="mt-2 flex h-12 items-center gap-2.5 rounded-[6px] border border-[#dfe1e6] px-2.5 pl-8">
+                    <Link
+                      key={space.id}
+                      href={`/workspaces/${id}/spaces/${space.id}`}
+                      className="mt-2 flex h-12 items-center gap-2.5 rounded-[6px] border border-[#dfe1e6] px-2.5 pl-8 hover:bg-[#f7f8f9]"
+                    >
                       <span
                         className="grid size-[28px] place-items-center rounded-[6px]"
                         style={{ backgroundColor: spaceSwatch(space.color) }}
@@ -266,9 +270,9 @@ export function WorkspaceDetail() {
                       </span>
                       <span>
                         <span className="block text-[13px] font-bold text-[#172b4d]">{space.name}</span>
-                        <span className="block text-[12px] text-[#626f86]">0 List</span>
+                        <span className="block text-[12px] text-[#626f86]">{space.listCount ?? 0} List</span>
                       </span>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </section>

@@ -92,6 +92,9 @@ export class AuthService {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
+    if (user.locked) {
+      throw new UnauthorizedException('Tài khoản đã bị khóa');
+    }
 
     return this.issue(user);
   }

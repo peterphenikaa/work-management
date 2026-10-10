@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import type { DeleteWorkspaceDto } from './dto/delete-workspace.dto.js';
 import type { ListWorkspacesQuery } from './dto/list-workspaces.query.js';
+import type { UpdatePersonDto } from './dto/update-person.dto.js';
 import type { UpdateWorkspaceDto } from './dto/update-workspace.dto.js';
 
 const workspaceInclude = {
@@ -505,6 +506,7 @@ export class WorkspaceService {
       INVITATION_ACCEPT: 'Thành viên tham gia',
       INVITATION_REVOKE: 'Thu hồi lời mời',
       SPACE_CREATE: 'Tạo Space',
+      SPACE_UPDATE: 'Cập nhật Space',
     };
     return {
       items: rows.map((row) => ({
@@ -520,10 +522,74 @@ export class WorkspaceService {
   async people(actor: AuthUser) {
     this.assertAdmin(actor);
     const items = await this.prisma.user.findMany({
-      select: { id: true, name: true, email: true, role: true },
+      select: { id: true, name: true, email: true, role: true, locked: true },
       orderBy: { name: 'asc' },
     });
     return { items };
+  }
+
+  async updatePerson(actor: AuthUser, userId: string, dto: UpdatePersonDto) {
+    this.assertAdmin(actor);
+    if (dto.role === undefined && dto.locked === undefined) {
+      throw new BadRequestException('Không có thay đổi');
+    }
+    if (actor.id === userId && dto.locked) {
+      throw new BadRequestException('Không thể khóa tài khoản của chính bạn');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Không tìm thấy thành viên');
+    if (user.role === 'ADMIN' && (dto.role && dto.role !== 'ADMIN' || dto.locked)) {
+      await this.assertAnotherAdmin(userId);
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.role ? { role: dto.role } : {}),
+        ...(dto.locked === undefined ? {} : { locked: dto.locked }),
+      },
+      select: { id: true, name: true, email: true, role: true, locked: true },
+    });
+    if (dto.role) {
+      await this.prisma.workspaceMember.updateMany({
+        where: { userId, status: 'ACTIVE' },
+        data: { role: dto.role },
+      });
+    }
+    return updated;
+  }
+
+  async removePerson(actor: AuthUser, userId: string) {
+    this.assertAdmin(actor);
+    if (actor.id === userId) {
+      throw new BadRequestException('Không thể xóa tài khoản của chính bạn');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Không tìm thấy thành viên');
+    if (user.role === 'ADMIN') await this.assertAnotherAdmin(userId);
+    const owned = await this.prisma.workspace.count({ where: { ownerId: userId, deletedAt: null } });
+    if (owned > 0) {
+      throw new BadRequestException('Người này đang sở hữu workspace, hãy chuyển quyền trước khi xóa');
+    }
+    const reported = await this.prisma.task.count({ where: { reporterId: userId, deletedAt: null } });
+    if (reported > 0) {
+      throw new BadRequestException('Không xóa được vì người này còn công việc đã giao');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.task.updateMany({ where: { assigneeId: userId }, data: { assigneeId: null } });
+      await tx.spaceMember.deleteMany({ where: { userId } });
+      await tx.workspaceMember.deleteMany({ where: { userId } });
+      await tx.user.delete({ where: { id: userId } });
+    });
+    return { id: userId };
+  }
+
+  private async assertAnotherAdmin(userId: string) {
+    const admins = await this.prisma.user.count({
+      where: { role: 'ADMIN', locked: false, id: { not: userId } },
+    });
+    if (admins === 0) {
+      throw new BadRequestException('Cần giữ ít nhất một quản trị viên đang hoạt động');
+    }
   }
 
   async members(actor: AuthUser, id: string) {
