@@ -115,7 +115,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="flex flex-col gap-0.5">
                     {group.items.map((item) => {
                       const Icon = item.icon;
-                      const active = item.href !== null && pathname === item.href;
+                      const active =
+                        item.href !== null &&
+                        (pathname === item.href || pathname.startsWith(`${item.href}/`));
                       const className = `flex h-9 items-center gap-3 rounded-[5px] px-3 text-[14px] ${
                         active
                           ? "bg-[#e9f2ff] font-semibold text-[#0052cc] shadow-[inset_3px_0_0_#0c66e4]"

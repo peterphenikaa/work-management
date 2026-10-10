@@ -29,7 +29,8 @@ model User {
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @updatedAt @map("updated_at")
   ownedWorkspaces Workspace[]       @relation("WorkspaceOwner")
-  memberships     WorkspaceMember[]
+  memberships      WorkspaceMember[]
+  spaceMemberships SpaceMember[]
 
   @@map("users")
 }
@@ -72,6 +73,7 @@ model Workspace {
   members     WorkspaceMember[]
   invitations Invitation[]
   iconFile    WorkspaceIcon?
+  spaces      Space[]
 
   @@index([deletedAt, status])
   @@index([ownerId])
@@ -117,6 +119,71 @@ model Invitation {
   @@index([workspaceId, status])
   @@index([email, status])
   @@map("invitations")
+}
+
+enum SpaceIcon {
+  ARCHIVE
+  BOARD
+  SPARK
+  REPORTS
+  MEMBERS
+}
+
+enum SpaceColor {
+  BLUE
+  PURPLE
+  TEAL
+  ORANGE
+}
+
+enum SpaceView {
+  KANBAN
+  LIST
+  CALENDAR
+  AGILE
+}
+
+model Space {
+  id          String       @id @default(cuid())
+  workspaceId String       @map("workspace_id")
+  name        String
+  description String?
+  icon        SpaceIcon    @default(ARCHIVE)
+  color       SpaceColor   @default(BLUE)
+  accessType  AccessType   @default(PRIVATE) @map("access_type")
+  views       SpaceView[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  deletedAt   DateTime?    @map("deleted_at")
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members     SpaceMember[]
+  statuses    SpaceStatus[]
+
+  @@index([workspaceId, deletedAt])
+  @@map("spaces")
+}
+
+model SpaceMember {
+  id      String @id @default(cuid())
+  spaceId String @map("space_id")
+  userId  String @map("user_id")
+  space   Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([spaceId, userId])
+  @@index([userId])
+  @@map("space_members")
+}
+
+model SpaceStatus {
+  id       String @id @default(cuid())
+  spaceId  String @map("space_id")
+  name     String
+  position Int
+  space    Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, position])
+  @@map("space_statuses")
 }
 
 model AuditLog {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
@@ -141,7 +142,9 @@ export function WorkspaceScreen() {
             >
               <div className="flex min-w-0 items-center gap-3">
                 <WorkspaceMark item={item} />
-                <span className="truncate text-[14px] font-semibold text-[#172b4d]">{item.name}</span>
+                <Link href={`/workspaces/${item.id}`} className="truncate text-[14px] font-semibold text-[#172b4d] hover:text-[#0c66e4]">
+                  {item.name}
+                </Link>
               </div>
               <span className="text-[13px] text-[#44546f]">{formatCreated(item.createdAt)}</span>
               <span className="text-[13px] text-[#44546f]">{item.memberCount} thành viên</span>

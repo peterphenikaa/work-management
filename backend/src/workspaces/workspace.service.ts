@@ -469,6 +469,54 @@ export class WorkspaceService {
     return { mime: workspace.iconMime, data: Buffer.from(workspace.iconFile.data) };
   }
 
+  async get(actor: AuthUser, id: string) {
+    this.assertAdmin(actor);
+    const row = await this.prisma.workspace.findFirst({
+      where: { id, deletedAt: null },
+      include: workspaceInclude,
+    });
+    if (!row) throw new NotFoundException('Không tìm thấy workspace');
+    return this.toItem(row);
+  }
+
+  async activity(actor: AuthUser, id: string) {
+    this.assertAdmin(actor);
+    await this.requireWorkspace(id);
+    const rows = await this.prisma.auditLog.findMany({
+      where: {
+        OR: [
+          { targetType: 'WORKSPACE', targetId: id },
+          { metadata: { path: ['workspaceId'], equals: id } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    const actors = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(rows.map((row) => row.actorId))] } },
+      select: { id: true, name: true },
+    });
+    const names = new Map(actors.map((actorRow) => [actorRow.id, actorRow.name]));
+    const labels: Record<string, string> = {
+      WORKSPACE_CREATE: 'Tạo Workspace',
+      WORKSPACE_UPDATE: 'Cập nhật Workspace',
+      WORKSPACE_DELETE: 'Xóa Workspace',
+      INVITATION_CREATE: 'Mời thành viên',
+      INVITATION_ACCEPT: 'Thành viên tham gia',
+      INVITATION_REVOKE: 'Thu hồi lời mời',
+      SPACE_CREATE: 'Tạo Space',
+    };
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        action: row.action,
+        label: labels[row.action] ?? row.action,
+        actorName: names.get(row.actorId) ?? 'Hệ thống',
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
   async people(actor: AuthUser) {
     this.assertAdmin(actor);
     const items = await this.prisma.user.findMany({

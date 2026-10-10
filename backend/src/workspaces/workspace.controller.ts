@@ -70,6 +70,16 @@ export class WorkspaceController {
     return this.workspaces.setIcon(request.user, id, file);
   }
 
+  @Get(':id')
+  get(@Req() request: { user: AuthUser }, @Param('id') id: string) {
+    return this.workspaces.get(request.user, id);
+  }
+
+  @Get(':id/activity')
+  activity(@Req() request: { user: AuthUser }, @Param('id') id: string) {
+    return this.workspaces.activity(request.user, id);
+  }
+
   @Get(':id/members')
   members(@Req() request: { user: AuthUser }, @Param('id') id: string) {
     return this.workspaces.members(request.user, id);
