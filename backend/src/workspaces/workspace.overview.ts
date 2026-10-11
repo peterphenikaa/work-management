@@ -45,7 +45,13 @@ export async function buildWorkspaceOverview(
     if (!space) throw new BadRequestException('Space không thuộc workspace này');
   }
 
-  const [spaces, members, tasks, logs] = await Promise.all([
+  const [activeSprints, spaces, members, tasks, logs] = await Promise.all([
+    prisma.sprint.count({
+      where: {
+        status: 'ACTIVE',
+        space: { workspaceId: input.workspaceId, deletedAt: null, ...(input.spaceId ? { id: input.spaceId } : {}) },
+      },
+    }),
     prisma.space.findMany({
       where: { workspaceId: input.workspaceId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
@@ -133,7 +139,7 @@ export async function buildWorkspaceOverview(
     completedTasks: completed,
     completionRate: total === 0 ? null : Math.round((completed / total) * 100),
     overdueTasks: overdue,
-    activeSprints: 0,
+    activeSprints,
     spaces: spaces.map((space) => ({
       id: space.id,
       name: space.name,

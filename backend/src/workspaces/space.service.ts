@@ -4,21 +4,51 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.types.js';
+import { statusBucket } from '../common/status-bucket.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationService } from './notification.service.js';
 import { CreateSpaceDto } from './dto/create-space.dto.js';
 import { UpdateSpaceDto } from './dto/update-space.dto.js';
 import { CreateListDto, UpdateListDto } from './dto/list.dto.js';
 import { CreateTaskDto, UpdateTaskDto } from './dto/task.dto.js';
 
+const SPACE_DETAIL_INCLUDE = {
+  workspace: { select: { name: true } },
+  statuses: { orderBy: { position: 'asc' } },
+  members: {
+    include: { user: { select: { name: true, email: true } } },
+    orderBy: { id: 'asc' },
+  },
+  lists: {
+    where: { deletedAt: null },
+    orderBy: { position: 'asc' },
+    include: { tasks: { where: { deletedAt: null }, select: { id: true } } },
+  },
+  tasks: {
+    where: { deletedAt: null },
+    orderBy: { position: 'asc' },
+    include: {
+      assignee: { select: { name: true } },
+      reporter: { select: { name: true } },
+    },
+  },
+} satisfies Prisma.SpaceInclude;
+
+type SpaceDetailRow = Prisma.SpaceGetPayload<{ include: typeof SPACE_DETAIL_INCLUDE }>;
+
 @Injectable()
 export class SpaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+  ) {}
 
   async list(actor: AuthUser, workspaceId: string) {
-    await this.requireMembership(actor, workspaceId);
+    const access = await this.requireMembership(actor, workspaceId);
     const rows = await this.prisma.space.findMany({
-      where: { workspaceId, deletedAt: null },
+      where: { workspaceId, deletedAt: null, ...access.scope },
       orderBy: { createdAt: 'asc' },
       include: {
         _count: { select: { members: true, statuses: true } },
@@ -188,43 +218,78 @@ export class SpaceService {
   }
 
   async get(actor: AuthUser, workspaceId: string, spaceId: string) {
-    await this.requireMembership(actor, workspaceId);
+    const access = await this.requireMembership(actor, workspaceId);
     const row = await this.prisma.space.findFirst({
-      where: { id: spaceId, workspaceId, deletedAt: null },
-      include: {
-        workspace: { select: { name: true } },
-        statuses: { orderBy: { position: 'asc' } },
-        members: {
-          include: { user: { select: { name: true, email: true } } },
-          orderBy: { id: 'asc' },
-        },
-        lists: {
-          where: { deletedAt: null },
-          orderBy: { position: 'asc' },
-          include: { tasks: { where: { deletedAt: null }, select: { id: true } } },
-        },
-        tasks: {
-          where: { deletedAt: null },
-          orderBy: { position: 'asc' },
-          include: {
-            assignee: { select: { name: true } },
-            reporter: { select: { name: true } },
-          },
-        },
-      },
+      where: { id: spaceId, workspaceId, deletedAt: null, ...access.scope },
+      include: SPACE_DETAIL_INCLUDE,
     });
     if (!row) throw new NotFoundException('Không tìm thấy space');
+    const people = await this.workspacePeople(workspaceId);
+    return this.presentSpace(row, people, access.role);
+  }
 
-    const roles = await this.prisma.workspaceMember.findMany({
-      where: {
-        workspaceId,
-        status: 'ACTIVE',
-        userId: { in: row.members.map((member) => member.userId) },
-      },
-      select: { userId: true, role: true },
+  // Một lần gọi trả về mọi Space (kèm trạng thái, list, task) mà người dùng được xem.
+  async detailedList(actor: AuthUser, workspaceId: string) {
+    const access = await this.requireMembership(actor, workspaceId);
+    const rows = await this.prisma.space.findMany({
+      where: { workspaceId, deletedAt: null, ...access.scope },
+      orderBy: { createdAt: 'asc' },
+      include: SPACE_DETAIL_INCLUDE,
     });
-    const roleByUser = new Map(roles.map((role) => [role.userId, role.role]));
+    const people = await this.workspacePeople(workspaceId);
+    return { items: rows.map((row) => this.presentSpace(row, people, access.role)) };
+  }
 
+  async updateSettings(
+    actor: AuthUser,
+    workspaceId: string,
+    spaceId: string,
+    dto: { memberCanCreateTask: boolean },
+  ) {
+    await this.requireLeader(actor, workspaceId);
+    await this.requireSpace(workspaceId, spaceId);
+    const updated = await this.prisma.space.update({
+      where: { id: spaceId },
+      data: { memberCanCreateTask: dto.memberCanCreateTask },
+      select: { id: true, memberCanCreateTask: true },
+    });
+    return updated;
+  }
+
+  private async workspacePeople(workspaceId: string) {
+    const rows = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId, status: 'ACTIVE' },
+      orderBy: { joinedAt: 'asc' },
+      select: { userId: true, role: true, user: { select: { name: true, email: true } } },
+    });
+    return rows.map((row) => ({
+      userId: row.userId,
+      role: row.role,
+      name: row.user.name,
+      email: row.user.email,
+    }));
+  }
+
+  private presentSpace(
+    row: SpaceDetailRow,
+    people: { userId: string; role: string; name: string; email: string }[],
+    viewerRole: 'ADMIN' | 'LEADER' | 'MEMBER',
+  ) {
+    const byId = new Map(people.map((person) => [person.userId, person]));
+    // Space công khai: giao được cho mọi thành viên đang hoạt động của workspace.
+    const roster =
+      row.accessType === 'PUBLIC'
+        ? people
+        : row.members.map((member) => {
+            const person = byId.get(member.userId);
+            return {
+              userId: member.userId,
+              role: person?.role ?? 'MEMBER',
+              name: member.user.name,
+              email: member.user.email,
+            };
+          });
+    const seen = new Set<string>();
     return {
       id: row.id,
       name: row.name,
@@ -233,18 +298,25 @@ export class SpaceService {
       color: row.color,
       accessType: row.accessType,
       views: row.views,
+      memberCanCreateTask: row.memberCanCreateTask,
       workspaceName: row.workspace.name,
       statuses: row.statuses.map((status) => ({
         id: status.id,
         name: status.name,
         position: status.position,
       })),
-      members: row.members.map((member) => ({
-        userId: member.userId,
-        name: member.user.name,
-        email: member.user.email,
-        role: roleByUser.get(member.userId) ?? 'MEMBER',
-      })),
+      members: roster.flatMap((person) => {
+        if (seen.has(person.userId)) return [];
+        seen.add(person.userId);
+        return [
+          {
+            userId: person.userId,
+            name: person.name,
+            email: viewerRole === 'MEMBER' ? '' : person.email,
+            role: person.role,
+          },
+        ];
+      }),
       lists: row.lists.map((list) => ({
         id: list.id,
         name: list.name,
@@ -333,13 +405,32 @@ export class SpaceService {
   }
 
   async createTask(actor: AuthUser, workspaceId: string, spaceId: string, dto: CreateTaskDto) {
-    await this.requireLeader(actor, workspaceId);
-    const space = await this.requireSpace(workspaceId, spaceId);
+    const access = await this.requireMembership(actor, workspaceId);
+    const space = await this.prisma.space.findFirst({
+      where: { id: spaceId, workspaceId, deletedAt: null, ...access.scope },
+    });
+    if (!space) throw new NotFoundException('Không tìm thấy space');
+
+    let reporterId = dto.reporterId ?? actor.id;
+    if (access.role === 'MEMBER') {
+      // BR-M07: chỉ tạo được khi Space bật quyền; Member luôn là người giao và chỉ tự nhận việc.
+      if (!space.memberCanCreateTask) {
+        throw new ForbiddenException('Space này không cho phép thành viên tạo công việc');
+      }
+      const joined = await this.prisma.spaceMember.findUnique({
+        where: { spaceId_userId: { spaceId, userId: actor.id } },
+      });
+      if (!joined) throw new ForbiddenException('Bạn chưa là thành viên của Space này');
+      if (dto.assigneeId && dto.assigneeId !== actor.id) {
+        throw new ForbiddenException('Bạn không có quyền giao việc cho người khác');
+      }
+      reporterId = actor.id;
+    }
+
     await this.requireList(workspaceId, spaceId, dto.listId);
     const statusId = await this.resolveStatus(spaceId, dto.statusId);
-    if (dto.assigneeId) await this.requireMember(spaceId, dto.assigneeId);
-    const reporterId = dto.reporterId ?? actor.id;
-    await this.requireMember(spaceId, reporterId);
+    if (dto.assigneeId) await this.requireAssignable(workspaceId, spaceId, dto.assigneeId);
+    await this.requireAssignable(workspaceId, spaceId, reporterId);
     const created = await this.prisma.$transaction(async (tx) => {
       const count = await tx.task.count({ where: { spaceId } });
       const last = await tx.task.findFirst({
@@ -367,6 +458,18 @@ export class SpaceService {
         },
       });
     });
+    if (created.assigneeId) {
+      await this.notifications.notify({
+        userIds: [created.assigneeId],
+        actorId: actor.id,
+        workspaceId,
+        spaceId,
+        taskId: created.id,
+        type: 'ASSIGNED',
+        title: `${actor.name} đã giao cho bạn ${created.code}`,
+        body: created.title,
+      });
+    }
     return this.presentTask(created);
   }
 
@@ -377,16 +480,34 @@ export class SpaceService {
     taskId: string,
     dto: UpdateTaskDto,
   ) {
-    await this.requireLeader(actor, workspaceId);
+    const access = await this.requireMembership(actor, workspaceId);
+    if (access.role === 'MEMBER') {
+      // BR-M01/M04: Member chỉ được đổi trạng thái, không sửa nội dung hay người phụ trách.
+      const touched = Object.entries(dto).filter(([, value]) => value !== undefined);
+      if (!dto.statusId || touched.some(([key]) => key !== 'statusId')) {
+        throw new ForbiddenException('Thành viên chỉ được cập nhật trạng thái công việc');
+      }
+    }
     const task = await this.prisma.task.findFirst({
-      where: { id: taskId, spaceId, deletedAt: null, space: { workspaceId, deletedAt: null } },
+      where: {
+        id: taskId,
+        spaceId,
+        deletedAt: null,
+        space: { workspaceId, deletedAt: null, ...access.scope },
+      },
+      include: { status: { select: { name: true } } },
     });
     if (!task) throw new NotFoundException('Không tìm thấy công việc');
     const listId = dto.listId ?? task.listId;
     if (listId !== task.listId) await this.requireList(workspaceId, spaceId, listId);
     const statusId = dto.statusId ? await this.resolveStatus(spaceId, dto.statusId) : task.statusId;
-    if (dto.assigneeId) await this.requireMember(spaceId, dto.assigneeId);
-    if (dto.reporterId) await this.requireMember(spaceId, dto.reporterId);
+    if (dto.assigneeId) await this.requireAssignable(workspaceId, spaceId, dto.assigneeId);
+    if (dto.reporterId) await this.requireAssignable(workspaceId, spaceId, dto.reporterId);
+    if (dto.sprintId) {
+      const sprint = await this.prisma.sprint.findFirst({ where: { id: dto.sprintId, spaceId } });
+      if (!sprint) throw new BadRequestException('Sprint không thuộc space này');
+      if (sprint.status === 'CLOSED') throw new BadRequestException('Sprint đã đóng');
+    }
     const updated = await this.prisma.task.update({
       where: { id: task.id },
       data: {
@@ -398,13 +519,80 @@ export class SpaceService {
         assigneeId: dto.assigneeId === undefined ? task.assigneeId : dto.assigneeId,
         reporterId: dto.reporterId ?? task.reporterId,
         dueAt: dto.dueAt === undefined ? task.dueAt : dto.dueAt ? new Date(dto.dueAt) : null,
+        sprintId: dto.sprintId === undefined ? task.sprintId : dto.sprintId,
       },
       include: {
         assignee: { select: { name: true } },
         reporter: { select: { name: true } },
+        status: { select: { name: true } },
       },
     });
+
+    await this.recordChanges(actor, workspaceId, task, updated);
     return this.presentTask(updated);
+  }
+
+  // Ghi lịch sử hoạt động và gửi thông báo khi đổi trạng thái hoặc giao việc.
+  private async recordChanges(
+    actor: AuthUser,
+    workspaceId: string,
+    before: { id: string; spaceId: string; code: string; title: string; statusId: string; assigneeId: string | null; reporterId: string; status: { name: string } },
+    after: { statusId: string; assigneeId: string | null; reporterId: string; assignee: { name: string } | null; status: { name: string } },
+  ) {
+    const events: string[] = [];
+    if (after.statusId !== before.statusId) {
+      events.push(`đã chuyển trạng thái từ "${before.status.name}" sang "${after.status.name}"`);
+    }
+    if (after.assigneeId !== before.assigneeId) {
+      events.push(after.assignee ? `đã giao việc cho ${after.assignee.name}` : 'đã bỏ người thực hiện');
+    }
+    if (events.length === 0) return;
+    try {
+      await this.prisma.taskComment.createMany({
+        data: events.map((body) => ({ taskId: before.id, authorId: actor.id, kind: 'EVENT', body })),
+      });
+    } catch {
+      // Lịch sử là phần phụ, không chặn cập nhật chính.
+    }
+    const common = { actorId: actor.id, workspaceId, spaceId: before.spaceId, taskId: before.id };
+    if (after.statusId !== before.statusId) {
+      const review = statusBucket(after.status.name) === 'REVIEW';
+      const watchers = await this.prisma.workspaceMember.findMany({
+        where: { workspaceId, status: 'ACTIVE', role: { in: ['LEADER', 'ADMIN'] } },
+        select: { userId: true },
+      });
+      await this.notifications.notify({
+        ...common,
+        userIds: [
+          ...(review ? [after.reporterId] : [after.assigneeId, after.reporterId]),
+          ...watchers.map((watcher) => watcher.userId),
+        ],
+        type: review ? 'REVIEW' : 'STATUS',
+        title: review
+          ? `${actor.name} gửi ${before.code} để đánh giá`
+          : `${actor.name} chuyển ${before.code} sang "${after.status.name}"`,
+        body: before.title,
+      });
+    }
+    if (after.assigneeId && after.assigneeId !== before.assigneeId) {
+      await this.notifications.notify({
+        ...common,
+        userIds: [after.assigneeId],
+        type: 'ASSIGNED',
+        title: `${actor.name} đã giao cho bạn ${before.code}`,
+        body: before.title,
+      });
+    }
+  }
+
+  async requireTaskAccess(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string) {
+    const access = await this.requireMembership(actor, workspaceId);
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, spaceId, deletedAt: null, space: { workspaceId, deletedAt: null, ...access.scope } },
+      include: { space: { select: { accessType: true } }, status: { select: { name: true } } },
+    });
+    if (!task) throw new NotFoundException('Không tìm thấy công việc');
+    return { access, task };
   }
 
   private presentTask(task: {
@@ -418,7 +606,9 @@ export class SpaceService {
     assigneeId: string | null;
     reporterId: string;
     dueAt: Date | null;
+    sprintId: string | null;
     createdAt: Date;
+    updatedAt: Date;
     assignee: { name: string } | null;
     reporter: { name: string };
   }) {
@@ -435,11 +625,13 @@ export class SpaceService {
       reporterId: task.reporterId,
       reporterName: task.reporter.name,
       dueAt: task.dueAt ? task.dueAt.toISOString() : null,
+      sprintId: task.sprintId,
       createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString(),
     };
   }
 
-  private async requireSpace(workspaceId: string, spaceId: string) {
+  async requireSpace(workspaceId: string, spaceId: string) {
     const space = await this.prisma.space.findFirst({
       where: { id: spaceId, workspaceId, deletedAt: null },
     });
@@ -469,7 +661,22 @@ export class SpaceService {
     return first.id;
   }
 
-  private async requireMember(spaceId: string, userId: string) {
+  // Space công khai giao cho mọi thành viên workspace. Space riêng tư chỉ giao cho thành viên của Space.
+  private async requireAssignable(workspaceId: string, spaceId: string, userId: string) {
+    const space = await this.prisma.space.findFirst({
+      where: { id: spaceId, workspaceId, deletedAt: null },
+      select: { accessType: true },
+    });
+    if (!space) throw new NotFoundException('Không tìm thấy space');
+    if (space.accessType === 'PUBLIC') {
+      const member = await this.prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId, userId } },
+      });
+      if (!member || member.status !== 'ACTIVE') {
+        throw new BadRequestException('Người được chọn không thuộc workspace');
+      }
+      return;
+    }
     const member = await this.prisma.spaceMember.findUnique({
       where: { spaceId_userId: { spaceId, userId } },
     });
@@ -492,7 +699,7 @@ export class SpaceService {
     }
   }
 
-  private async requireLeader(actor: AuthUser, workspaceId: string) {
+  async requireLeader(actor: AuthUser, workspaceId: string) {
     await this.requireWorkspace(workspaceId);
     if (actor.role === 'ADMIN') return;
     const member = await this.prisma.workspaceMember.findUnique({
@@ -503,15 +710,27 @@ export class SpaceService {
     }
   }
 
-  private async requireMembership(actor: AuthUser, workspaceId: string) {
+  // Trả về vai trò trong workspace và điều kiện lọc Space mà người dùng được nhìn thấy.
+  // Member thường chỉ thấy Space PUBLIC hoặc Space mình là thành viên (BR-M02).
+  async requireMembership(
+    actor: AuthUser,
+    workspaceId: string,
+  ): Promise<{ role: 'ADMIN' | 'LEADER' | 'MEMBER'; scope: Prisma.SpaceWhereInput }> {
     await this.requireWorkspace(workspaceId);
-    if (actor.role === "ADMIN") return;
+    if (actor.role === 'ADMIN') return { role: 'ADMIN', scope: {} };
     const member = await this.prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId: actor.id } },
     });
-    if (!member || member.status !== "ACTIVE") {
-      throw new ForbiddenException("Bạn không thuộc workspace này");
+    if (!member || member.status !== 'ACTIVE') {
+      throw new ForbiddenException('Bạn không thuộc workspace này');
     }
+    if (member.role === 'MEMBER') {
+      return {
+        role: 'MEMBER',
+        scope: { OR: [{ accessType: 'PUBLIC' }, { members: { some: { userId: actor.id } } }] },
+      };
+    }
+    return { role: member.role === 'ADMIN' ? 'ADMIN' : 'LEADER', scope: {} };
   }
 
   private async requireWorkspace(id: string) {

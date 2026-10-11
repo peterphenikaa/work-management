@@ -22,6 +22,8 @@ import { ROLE_LABEL, initials } from "@/lib/roles";
 import { WorkspaceAvatar } from "@/components/leader/workspace-avatar";
 import { WorkspaceSwitcher } from "@/components/leader/workspace-switcher";
 import { type MineWorkspace } from "@/components/leader/workspace-mark";
+import { MemberDataProvider, useMemberData } from "@/components/member/member-data";
+import { NotificationBell } from "@/components/shell/notification-bell";
 import { UserMenu } from "@/components/shell/user-menu";
 
 const STORAGE_KEY = "northstar-workspace";
@@ -57,6 +59,21 @@ const NAV: { label: string; items: { tab: string; label: string; icon: LucideIco
     ],
   },
   { label: "Phân tích", items: [{ tab: "reports", label: "Báo cáo", icon: ChartColumn }] },
+];
+
+// Member không có Backlog/Báo cáo quản trị; có thêm trung tâm thông báo cá nhân.
+const MEMBER_NAV: typeof NAV = [
+  { label: "Cá nhân", items: [{ tab: "dashboard", label: "Công việc của tôi", icon: LayoutGrid }] },
+  {
+    label: "Dự án",
+    items: [
+      { tab: "projects", label: "Space & List", icon: FolderKanban },
+      { tab: "board", label: "Board", icon: SquareKanban },
+      { tab: "list", label: "List", icon: List },
+    ],
+  },
+  { label: "Agile", items: [{ tab: "sprint", label: "Sprint hiện tại", icon: Repeat }] },
+  { label: "Thông báo", items: [{ tab: "notifications", label: "Thông báo", icon: Bell }] },
 ];
 
 function chooseId(items: MineWorkspace[], preferId: string | undefined, current: string | null) {
@@ -133,7 +150,17 @@ export function LeaderExperience({
 
   return (
     <LeaderContext.Provider value={{ workspaces, current, select, reload }}>
-      {current && !failed ? <LeaderChrome user={user}>{children}</LeaderChrome> : empty}
+      {current && !failed ? (
+        current.role === "MEMBER" ? (
+          <MemberDataProvider key={`${current.id}:${user.id}`} workspaceId={current.id} workspaceName={current.name} userId={user.id}>
+            <LeaderChrome user={user}>{children}</LeaderChrome>
+          </MemberDataProvider>
+        ) : (
+          <LeaderChrome user={user}>{children}</LeaderChrome>
+        )
+      ) : (
+        empty
+      )}
     </LeaderContext.Provider>
   );
 }
@@ -144,8 +171,13 @@ function LeaderChrome({ user, children }: { user: AuthUser; children: React.Reac
   const params = useSearchParams();
   const anchorRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const member = useMemberData();
   const current = leader?.current;
   if (!current || !leader) return null;
+
+  const isMember = current.role === "MEMBER";
+  const nav = isMember ? MEMBER_NAV : NAV;
+  const unread = isMember ? (member?.unread ?? 0) : 0;
 
   const tab = pathname === "/home" ? (params.get("tab") ?? "dashboard") : "";
   const badgeClass =
@@ -173,10 +205,18 @@ function LeaderChrome({ user, children }: { user: AuthUser; children: React.Reac
           </kbd>
         </label>
         <div className="flex items-center justify-end gap-3">
-          <button type="button" aria-label="Thông báo" className="relative grid size-8 place-items-center text-[#626f86]">
-            <Bell size={18} />
-            <span className="absolute top-1 right-1 size-2 rounded-full bg-[#ca3521] ring-2 ring-white" />
-          </button>
+          {isMember ? (
+            <Link href="/home?tab=notifications" aria-label={unread > 0 ? `Thông báo, ${unread} chưa đọc` : "Thông báo"} className="relative grid size-8 place-items-center text-[#626f86] hover:text-[#172b4d]">
+              <Bell size={18} />
+              {unread > 0 ? (
+                <span className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#ca3521] px-1 text-[10px] leading-none font-bold text-white ring-2 ring-white">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              ) : null}
+            </Link>
+          ) : (
+            <NotificationBell />
+          )}
           <UserMenu user={user} badge={ROLE_LABEL[current.role]} badgeClassName={badgeClass} />
         </div>
       </header>
@@ -206,7 +246,7 @@ function LeaderChrome({ user, children }: { user: AuthUser; children: React.Reac
           </div>
 
           <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pt-4">
-            {NAV.map((group, index) => (
+            {nav.map((group, index) => (
               <div key={group.label} className={index === 0 ? "" : "mt-3 border-t border-[#dfe1e6]/70 pt-4"}>
                 <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-[#7a869a] uppercase">
                   {group.label}
@@ -227,7 +267,10 @@ function LeaderChrome({ user, children }: { user: AuthUser; children: React.Reac
                         }`}
                       >
                         <Icon size={16} />
-                        {item.label}
+                        <span className="flex-1">{item.label}</span>
+                        {item.tab === "notifications" && unread > 0 ? (
+                          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#ca3521] px-1.5 text-[11px] font-bold text-white">{unread > 99 ? "99+" : unread}</span>
+                        ) : null}
                       </Link>
                     );
                   })}

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Bell,
   Building2,
   ChartColumn,
   CircleUser,
@@ -18,6 +17,7 @@ import { api, type AuthUser } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
 import { LeaderExperience } from "@/components/leader/leader-shell";
 import { ShellUserContext } from "@/components/shell/shell-user";
+import { NotificationBell } from "@/components/shell/notification-bell";
 import { UserMenu } from "@/components/shell/user-menu";
 
 export { useShellUser } from "@/components/shell/shell-user";
@@ -112,14 +112,7 @@ function ManagementChrome({ user, children }: { user: AuthUser; children: React.
           </label>
 
           <div className="flex items-center justify-end gap-3">
-            <button
-              type="button"
-              aria-label="Thông báo"
-              className="relative grid size-8 place-items-center text-[#626f86]"
-            >
-              <Bell size={18} />
-              <span className="absolute top-1 right-1 size-2 rounded-full bg-[#ca3521] ring-2 ring-white" />
-            </button>
+            <NotificationBell />
             <UserMenu user={user} />
           </div>
         </header>

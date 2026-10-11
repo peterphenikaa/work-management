@@ -459,6 +459,9 @@ export class WorkspaceService {
 
   async overview(actor: AuthUser, id: string, period?: string, spaceId?: string) {
     const access = await this.requireMembership(actor, id);
+    if (access.role === 'MEMBER') {
+      throw new ForbiddenException('Thành viên không xem được báo cáo tổng quan của workspace');
+    }
     return buildWorkspaceOverview(this.prisma, {
       workspaceId: access.workspace.id,
       workspaceName: access.workspace.name,
@@ -628,7 +631,10 @@ export class WorkspaceService {
   }
 
   async members(actor: AuthUser, id: string) {
-    await this.requireMembership(actor, id);
+    const access = await this.requireMembership(actor, id);
+    if (access.role === 'MEMBER') {
+      throw new ForbiddenException('Thành viên không xem được danh sách thành viên workspace');
+    }
 
     const rows = await this.prisma.workspaceMember.findMany({
       where: { workspaceId: id, status: 'ACTIVE' },

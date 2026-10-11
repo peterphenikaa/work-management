@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsDateString, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export const TASK_PRIORITIES = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
 
@@ -92,4 +92,48 @@ export class UpdateTaskDto {
   @Transform(({ value }) => emptyToNull(value))
   @IsDateString()
   dueAt?: string | null;
+
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @IsString()
+  sprintId?: string | null;
+}
+
+export class UpdateSpaceSettingsDto {
+  @IsBoolean()
+  memberCanCreateTask!: boolean;
+}
+
+export class CreateCommentDto {
+  @Transform(({ value }) => trimToString(value))
+  @IsString()
+  @MinLength(1, { message: 'Bình luận không được để trống' })
+  @MaxLength(2000)
+  body!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  mentionIds?: string[];
+}
+
+export class CreateSprintDto {
+  @Transform(({ value }) => trimToString(value))
+  @IsString()
+  @MinLength(1, { message: 'Tên Sprint không được để trống' })
+  @MaxLength(80)
+  name!: string;
+
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @IsString()
+  @MaxLength(500)
+  goal?: string | null;
+
+  @IsDateString()
+  startAt!: string;
+
+  @IsDateString()
+  endAt!: string;
 }

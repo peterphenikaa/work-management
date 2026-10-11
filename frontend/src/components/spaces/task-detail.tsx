@@ -1,8 +1,10 @@
 "use client";
 
 import { Check, Link2, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
+import { useShellUser } from "@/components/shell/shell-user";
+import { TaskActivity } from "@/components/spaces/task-activity";
 
 type Priority = "URGENT" | "HIGH" | "MEDIUM" | "LOW";
 const PRIORITIES: Priority[] = ["URGENT", "HIGH", "MEDIUM", "LOW"];
@@ -18,8 +20,6 @@ const PRIORITY_TONE: Record<Priority, string> = {
   MEDIUM: "bg-[#fff7d6] text-[#7f5f01]",
   LOW: "bg-[#f1f2f4] text-[#44546f]",
 };
-const AVATAR = ["#0c66e4", "#6e5dc6", "#e56910", "#22a06b", "#ae4787", "#334563"];
-
 export type TaskDraft = {
   id: string;
   listId: string;
@@ -33,10 +33,10 @@ export type TaskDraft = {
   reporterName: string;
   dueAt: string | null;
   createdAt?: string;
+  updatedAt?: string;
 };
 
 type CheckItem = { id: string; title: string; done: boolean };
-type Note = { id: string; author: string; body: string; at: string };
 
 export function TaskDialog({
   workspaceId,
@@ -50,6 +50,7 @@ export function TaskDialog({
   presetListId,
   presetStatusId,
   currentUserId,
+  memberMode = false,
   onClose,
   onSaved,
 }: {
@@ -64,15 +65,36 @@ export function TaskDialog({
   presetListId: string;
   presetStatusId?: string;
   currentUserId: string;
+  // Member: chỉ xem, đổi trạng thái (khi là người thực hiện), checklist và bình luận.
+  memberMode?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const creating = task === null;
+  const locked = memberMode && !creating;
+  const canChangeStatus = !memberMode || creating || task !== null;
+  const reviewStatus = statuses.find((status) => /review|đánh giá/i.test(status.name));
   const titleRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
-  const memberIds = new Set(members.map((member) => member.userId));
-  const fallbackReporter = currentUserId && memberIds.has(currentUserId) ? currentUserId : (members[0]?.userId ?? "");
-  const currentName = members.find((member) => member.userId === currentUserId)?.name ?? "Bạn";
+  const shellUser = useShellUser();
+  const actorId = currentUserId || shellUser?.id || "";
+  const actorName = shellUser?.name ?? "";
+  const [freshMembers, setFreshMembers] = useState<{ userId: string; name: string }[] | null>(null);
+  const roster = useMemo(() => {
+    const source = (freshMembers ?? members).map((person) => ({ userId: person.userId, name: person.name }));
+    if (actorId && !source.some((person) => person.userId === actorId)) {
+      source.unshift({ userId: actorId, name: actorName || "Bạn" });
+    }
+    const seen = new Set<string>();
+    return source.filter((person) => {
+      if (!person.userId || seen.has(person.userId)) return false;
+      seen.add(person.userId);
+      return true;
+    });
+  }, [actorId, actorName, freshMembers, members]);
+  const memberIds = new Set(roster.map((member) => member.userId));
+  const fallbackReporter = actorId || roster[0]?.userId || "";
+  const currentName = roster.find((member) => member.userId === actorId)?.name || actorName || "Bạn";
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [listId, setListId] = useState(task?.listId || presetListId || lists[0]?.id || "");
@@ -84,9 +106,7 @@ export function TaskDialog({
   const [reporterId, setReporterId] = useState(task?.reporterId || fallbackReporter);
   const [dueAt, setDueAt] = useState(task?.dueAt ? task.dueAt.slice(0, 10) : "");
   const [checks, setChecks] = useState<CheckItem[]>(() => loadExtra(task?.id).checks);
-  const [notes, setNotes] = useState<Note[]>(() => loadExtra(task?.id).notes);
   const [checkDraft, setCheckDraft] = useState("");
-  const [noteDraft, setNoteDraft] = useState("");
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -94,9 +114,23 @@ export function TaskDialog({
   const ready = title.trim().length > 0 && listId && statusId && reporterId && !saving;
   const statusName = statuses.find((status) => status.id === statusId)?.name ?? "Trạng thái";
   const listName = lists.find((list) => list.id === listId)?.name ?? "List";
-  const reporterName = members.find((member) => member.userId === reporterId)?.name ?? task?.reporterName ?? "—";
+  const reporterName = roster.find((member) => member.userId === reporterId)?.name ?? task?.reporterName ?? "—";
   const doneCount = checks.filter((item) => item.done).length;
   const progress = checks.length === 0 ? 0 : Math.round((doneCount / checks.length) * 100);
+
+  useEffect(() => {
+    if (memberMode) return;
+    let cancelled = false;
+    api
+      .get<{ members: { userId: string; name: string }[] }>(`/workspaces/${workspaceId}/spaces/${spaceId}`)
+      .then((response) => {
+        if (!cancelled) setFreshMembers(response.data.members ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [memberMode, spaceId, workspaceId]);
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -108,10 +142,10 @@ export function TaskDialog({
 
   useEffect(() => {
     if (!task) return;
-    saveExtra(task.id, checks, notes);
-  }, [task, checks, notes]);
+    saveExtra(task.id, checks);
+  }, [task, checks]);
 
-  const reporterOptions = members.map((member) => ({ id: member.userId, label: member.name }));
+  const reporterOptions = roster.map((member) => ({ id: member.userId, label: member.name }));
   if (task && !memberIds.has(task.reporterId)) {
     reporterOptions.unshift({ id: task.reporterId, label: task.reporterName });
   }
@@ -123,11 +157,10 @@ export function TaskDialog({
     setCheckDraft("");
   }
 
-  function addNote() {
-    const value = noteDraft.trim();
-    if (!value) return;
-    setNotes((current) => [{ id: crypto.randomUUID(), author: currentName, body: value, at: new Date().toISOString() }, ...current]);
-    setNoteDraft("");
+  // M05.09: cảnh báo khi đóng form tạo công việc đang nhập dở.
+  function requestClose() {
+    if (creating && (title.trim() || description.trim()) && !window.confirm("Dữ liệu chưa lưu sẽ bị mất. Bạn vẫn muốn đóng?")) return;
+    onClose();
   }
 
   async function copyText(value: string, label: string) {
@@ -140,10 +173,24 @@ export function TaskDialog({
     }
   }
 
-  async function save() {
+  async function save(nextStatusId?: string) {
     if (!ready) return;
     setSaving(true);
     setError("");
+    if (memberMode && task) {
+      const target = nextStatusId ?? statusId;
+      try {
+        if (target !== task.statusId) {
+          await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}`, { statusId: target });
+        }
+        saveExtra(task.id, checks);
+        onSaved();
+      } catch (reason: unknown) {
+        setError(reason instanceof Error ? reason.message : "Không cập nhật được công việc");
+        setSaving(false);
+      }
+      return;
+    }
     const payload = {
       listId,
       title: title.trim(),
@@ -157,10 +204,10 @@ export function TaskDialog({
     try {
       if (creating) {
         const response = await api.post<{ id: string }>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks`, payload);
-        saveExtra(response.data.id, checks, notes);
+        saveExtra(response.data.id, checks);
       } else {
         await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}`, payload);
-        saveExtra(task.id, checks, notes);
+        saveExtra(task.id, checks);
       }
       onSaved();
     } catch (reason: unknown) {
@@ -170,7 +217,7 @@ export function TaskDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-[#091e42]/45 p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[#091e42]/45 p-4" onMouseDown={requestClose}>
       <div
         role="dialog"
         aria-labelledby={titleId}
@@ -195,10 +242,12 @@ export function TaskDialog({
             >
               <Share2 size={15} />
             </IconButton>
-            <IconButton label="Sửa tiêu đề" onClick={() => titleRef.current?.focus()}>
-              <Pencil size={15} />
-            </IconButton>
-            <IconButton label="Đóng" onClick={onClose}>
+            {locked ? null : (
+              <IconButton label="Sửa tiêu đề" onClick={() => titleRef.current?.focus()}>
+                <Pencil size={15} />
+              </IconButton>
+            )}
+            <IconButton label="Đóng" onClick={requestClose}>
               <X size={16} />
             </IconButton>
           </span>
@@ -210,6 +259,7 @@ export function TaskDialog({
               <select
                 aria-label="Trạng thái"
                 value={statusId}
+                disabled={!canChangeStatus}
                 onChange={(event) => setStatusId(event.target.value)}
                 className={`h-7 rounded-full px-3 text-[11px] font-bold outline-none ${statusTone(statusName)}`}
               >
@@ -222,6 +272,7 @@ export function TaskDialog({
               <select
                 aria-label="Mức độ ưu tiên"
                 value={priority}
+                disabled={locked}
                 onChange={(event) => setPriority(event.target.value as Priority)}
                 className={`h-7 rounded-full px-3 text-[11px] font-bold outline-none ${PRIORITY_TONE[priority]}`}
               >
@@ -237,6 +288,7 @@ export function TaskDialog({
               ref={titleRef}
               id={titleId}
               value={title}
+              readOnly={locked}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="Tên công việc"
               className="mt-3 w-full border-0 bg-transparent text-[26px] leading-tight font-semibold text-[#172b4d] outline-none placeholder:text-[#172b4d]/35"
@@ -249,6 +301,7 @@ export function TaskDialog({
             <Section label="Mô tả">
               <textarea
                 value={description}
+                readOnly={locked}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Mô tả công việc, kết quả cần bàn giao..."
                 className="h-36 w-full resize-none rounded-lg border border-[#dfe1e6] bg-[#fafbfc] px-3 py-2.5 text-[13px] leading-5 text-[#172b4d] outline-none placeholder:text-[#a5adba] focus:border-[#0c66e4] focus:bg-white"
@@ -279,21 +332,26 @@ export function TaskDialog({
                     </button>
                     <input
                       value={item.title}
+                      readOnly={locked}
                       onChange={(event) => setChecks((current) => current.map((row) => (row.id === item.id ? { ...row, title: event.target.value } : row)))}
                       className={`min-w-0 flex-1 border-0 bg-transparent text-[13px] outline-none ${item.done ? "text-[#626f86] line-through" : "text-[#172b4d]"}`}
                     />
-                    <button
-                      type="button"
-                      aria-label="Xóa mục"
-                      onClick={() => setChecks((current) => current.filter((row) => row.id !== item.id))}
-                      className="grid size-6 place-items-center rounded text-[#626f86] opacity-0 group-hover:opacity-100 hover:bg-white"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    {locked ? null : (
+                      <button
+                        type="button"
+                        aria-label="Xóa mục"
+                        onClick={() => setChecks((current) => current.filter((row) => row.id !== item.id))}
+                        className="grid size-6 place-items-center rounded text-[#626f86] opacity-0 group-hover:opacity-100 hover:bg-white"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
+              {checks.length === 0 && locked ? <p className="mt-3 text-[12px] text-[#626f86]">Công việc chưa có checklist.</p> : null}
               <form
+                hidden={locked}
                 className="mt-2 flex items-center gap-2"
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -310,52 +368,21 @@ export function TaskDialog({
               </form>
             </Section>
 
-            <Section label="Hoạt động">
-              <form
-                className="flex items-start gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  addNote();
-                }}
-              >
-                <Avatar name={currentName} />
-                <input
-                  value={noteDraft}
-                  onChange={(event) => setNoteDraft(event.target.value)}
-                  placeholder="Viết cập nhật..."
-                  className="h-9 min-w-0 flex-1 rounded-lg border border-[#dfe1e6] px-3 text-[13px] text-[#172b4d] outline-none placeholder:text-[#a5adba] focus:border-[#0c66e4]"
-                />
-                <button type="submit" disabled={!noteDraft.trim()} className="h-9 rounded bg-[#0c66e4] px-3 text-[12px] font-semibold text-white disabled:opacity-50">
-                  Gửi
-                </button>
-              </form>
-              <ul className="mt-4 flex flex-col gap-3">
-                {notes.map((note) => (
-                  <li key={note.id} className="flex gap-2">
-                    <Avatar name={note.author} />
-                    <span className="min-w-0">
-                      <span className="block text-[12px] text-[#626f86]">
-                        <span className="font-semibold text-[#172b4d]">{note.author}</span>
-                        {` · ${relative(note.at)}`}
-                      </span>
-                      <span className="mt-0.5 block text-[13px] text-[#172b4d]">{note.body}</span>
-                    </span>
-                  </li>
-                ))}
-                {!creating && task?.createdAt ? (
-                  <li className="flex gap-2">
-                    <Avatar name={task.reporterName} />
-                    <span className="text-[12px] text-[#626f86]">
-                      <span className="font-semibold text-[#172b4d]">{task.reporterName}</span>
-                      {` đã tạo công việc · ${relative(task.createdAt)}`}
-                    </span>
-                  </li>
-                ) : null}
-                {notes.length === 0 && (creating || !task?.createdAt) ? (
-                  <li className="text-[12px] text-[#626f86]">Chưa có hoạt động.</li>
-                ) : null}
-              </ul>
-            </Section>
+            {task ? (
+              <TaskActivity
+                workspaceId={workspaceId}
+                spaceId={spaceId}
+                taskId={task.id}
+                people={roster}
+                currentUserId={actorId}
+                currentName={currentName}
+                canManageFiles={!memberMode}
+              />
+            ) : (
+              <Section label="Hoạt động">
+                <p className="text-[12px] text-[#626f86]">Lưu công việc để thêm bình luận và tệp đính kèm.</p>
+              </Section>
+            )}
           </div>
 
           <aside className="flex min-h-0 flex-col border-t border-[#eef0f3] bg-[#fafbfc] lg:border-t-0 lg:border-l lg:border-[#dfe1e6]">
@@ -366,33 +393,44 @@ export function TaskDialog({
                 <div className="flex h-9 items-center rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] font-medium text-[#172b4d]">{spaceName}</div>
               </Property>
               <Property label="List">
-                <Select value={listId} onChange={setListId} options={lists.map((list) => ({ id: list.id, label: list.name }))} />
+                <Select disabled={locked} value={listId} onChange={setListId} options={lists.map((list) => ({ id: list.id, label: list.name }))} />
               </Property>
               <Property label="Trạng thái">
-                <Select value={statusId} onChange={setStatusId} options={statuses.map((status) => ({ id: status.id, label: status.name }))} />
+                <Select disabled={!canChangeStatus} value={statusId} onChange={setStatusId} options={statuses.map((status) => ({ id: status.id, label: status.name }))} />
               </Property>
               <Property label="Mức độ ưu tiên">
-                <Select value={priority} onChange={(value) => setPriority(value as Priority)} options={PRIORITIES.map((item) => ({ id: item, label: PRIORITY_LABEL[item] }))} />
+                <Select disabled={locked} value={priority} onChange={(value) => setPriority(value as Priority)} options={PRIORITIES.map((item) => ({ id: item, label: PRIORITY_LABEL[item] }))} />
               </Property>
               <Property label="Người thực hiện">
-                <Select value={assigneeId} onChange={setAssigneeId} options={[{ id: "", label: "Chưa giao" }, ...members.map((member) => ({ id: member.userId, label: member.name }))]} />
+                <Select disabled={locked} value={assigneeId} onChange={setAssigneeId} options={[{ id: "", label: "Chưa giao" }, ...roster.filter((member) => !memberMode || member.userId === actorId || member.userId === task?.assigneeId).map((member) => ({ id: member.userId, label: member.name }))]} />
               </Property>
               <Property label="Người giao">
-                <Select value={reporterId} onChange={setReporterId} options={reporterOptions} />
+                <Select disabled={memberMode} value={reporterId} onChange={setReporterId} options={reporterOptions} />
               </Property>
               <Property label="Hạn chót">
                 <input
                   type="date"
                   value={dueAt}
+                  disabled={locked}
                   onChange={(event) => setDueAt(event.target.value)}
                   className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] text-[#172b4d] outline-none"
                 />
               </Property>
             </div>
+            {memberMode && canChangeStatus && reviewStatus && statusId !== reviewStatus.id ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void save(reviewStatus.id)}
+                className="mt-3 h-9 w-full rounded-md border border-[#0c66e4] bg-white text-[13px] font-semibold text-[#0c66e4] hover:bg-[#e9f2ff] disabled:opacity-55"
+              >
+                Gửi để đánh giá
+              </button>
+            ) : null}
             {error ? <p className="mt-3 text-[12px] text-[#ae2e24]">{error}</p> : null}
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-[#dfe1e6] px-4 py-3">
-              <button type="button" onClick={onClose} className="h-[34px] rounded bg-[#f1f2f4] px-3 text-[13px] font-semibold text-[#44546f] hover:bg-[#e4e6ea]">
+              <button type="button" onClick={requestClose} className="h-[34px] rounded bg-[#f1f2f4] px-3 text-[13px] font-semibold text-[#44546f] hover:bg-[#e4e6ea]">
                 Hủy
               </button>
               <button
@@ -447,13 +485,16 @@ function Select({
   value,
   options,
   onChange,
+  disabled,
 }: {
   value: string;
   options: { id: string; label: string }[];
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <select
+      disabled={disabled}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] text-[#172b4d] outline-none"
@@ -475,22 +516,6 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-function Avatar({ name }: { name: string }) {
-  let hash = 0;
-  for (const char of name) hash += char.charCodeAt(0);
-  const letters = name
-    .split(" ")
-    .filter(Boolean)
-    .slice(-2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-  return (
-    <span className="grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: AVATAR[hash % AVATAR.length] }}>
-      {letters || "?"}
-    </span>
-  );
-}
-
 function statusTone(name: string) {
   if (/hoàn/i.test(name)) return "bg-[#dcfff1] text-[#216e4e]";
   if (/đang|review/i.test(name)) return "bg-[#e9f2ff] text-[#0c66e4]";
@@ -503,35 +528,22 @@ function formatWhen(iso: string) {
   return new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
-function relative(iso: string) {
-  const delta = Date.now() - new Date(iso).getTime();
-  const minutes = Math.round(delta / 60000);
-  if (minutes < 1) return "vừa xong";
-  if (minutes < 60) return `${minutes} phút trước`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  return formatWhen(iso);
-}
-
 function extraKey(taskId: string) {
   return `northstar.task.extra.${taskId}`;
 }
 
 function loadExtra(taskId?: string) {
-  if (!taskId || typeof window === "undefined") return { checks: [] as CheckItem[], notes: [] as Note[] };
+  if (!taskId || typeof window === "undefined") return { checks: [] as CheckItem[] };
   try {
     const raw = window.localStorage.getItem(extraKey(taskId));
-    if (!raw) return { checks: [], notes: [] };
-    const parsed = JSON.parse(raw) as { checks?: CheckItem[]; notes?: Note[] };
-    return {
-      checks: Array.isArray(parsed.checks) ? parsed.checks : [],
-      notes: Array.isArray(parsed.notes) ? parsed.notes : [],
-    };
+    if (!raw) return { checks: [] as CheckItem[] };
+    const parsed = JSON.parse(raw) as { checks?: CheckItem[] };
+    return { checks: Array.isArray(parsed.checks) ? parsed.checks : [] };
   } catch {
-    return { checks: [], notes: [] };
+    return { checks: [] as CheckItem[] };
   }
 }
 
-function saveExtra(taskId: string, checks: CheckItem[], notes: Note[]) {
-  window.localStorage.setItem(extraKey(taskId), JSON.stringify({ checks, notes }));
+function saveExtra(taskId: string, checks: CheckItem[]) {
+  window.localStorage.setItem(extraKey(taskId), JSON.stringify({ checks }));
 }

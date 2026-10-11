@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   Ellipsis,
+  Eye,
   List,
   Pencil,
   Plus,
@@ -606,7 +607,7 @@ function ListRow({
   );
 }
 
-function ListView({
+export function ListView({
   statuses,
   tasks,
   hasLists,
@@ -614,14 +615,16 @@ function ListView({
   onCreate,
   onCreateList,
   onOpen,
+  readOnly = false,
 }: {
   statuses: Status[];
   tasks: TaskItem[];
   hasLists: boolean;
   filtered: boolean;
-  onCreate: () => void;
-  onCreateList: () => void;
+  onCreate?: () => void;
+  onCreateList?: () => void;
   onOpen: (taskId: string) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="min-w-0 flex-1 overflow-x-auto">
@@ -636,7 +639,7 @@ function ListView({
             <th className="w-[100px] px-3 py-2 font-bold">ƯU TIÊN</th>
             <th className="w-[96px] px-3 py-2 font-bold">HẠN CHÓT</th>
             <th className="w-10 px-2 py-2">
-              <span className="sr-only">Sửa</span>
+              <span className="sr-only">{readOnly ? "Xem" : "Sửa"}</span>
             </th>
           </tr>
         </thead>
@@ -645,12 +648,12 @@ function ListView({
             <tr>
               <td colSpan={8} className="px-4 py-10 text-center text-[13px] text-[#626f86]">
                 <p>{filtered ? "Không có công việc khớp bộ lọc." : hasLists ? `Chưa có công việc. Space đang có ${statuses.length} trạng thái.` : "Chưa có list trong space này."}</p>
-                {hasLists ? (
+                {hasLists && onCreate ? (
                   <button type="button" onClick={onCreate} className="mt-3 inline-flex h-8 items-center rounded bg-[#0c66e4] px-3 text-[12px] font-semibold text-white">
                     Tạo công việc
                   </button>
                 ) : null}
-                {!hasLists ? (
+                {!hasLists && onCreateList ? (
                   <button type="button" onClick={onCreateList} className="mt-3 inline-flex h-8 items-center rounded bg-[#0c66e4] px-3 text-[12px] font-semibold text-white">
                     Tạo List
                   </button>
@@ -684,8 +687,8 @@ function ListView({
                   <td className="px-3 py-2.5 text-[12px] font-semibold text-[#44546f]">{PRIORITY_LABEL[task.priority]}</td>
                   <td className="px-3 py-2.5 text-[12px] text-[#626f86]">{task.dueAt ? formatDue(task.dueAt) : "—"}</td>
                   <td className="px-2 py-2.5">
-                    <button type="button" aria-label={`Sửa ${task.code}`} onClick={() => onOpen(task.id)} className="grid size-7 place-items-center rounded text-[#626f86] hover:bg-white">
-                      <Pencil size={13} />
+                    <button type="button" aria-label={`${readOnly ? "Xem" : "Sửa"} ${task.code}`} onClick={() => onOpen(task.id)} className="grid size-7 place-items-center rounded text-[#626f86] hover:bg-white">
+                      {readOnly ? <Eye size={13} /> : <Pencil size={13} />}
                     </button>
                   </td>
                 </tr>
@@ -694,7 +697,7 @@ function ListView({
           )}
         </tbody>
       </table>
-      {hasLists && tasks.length > 0 ? (
+      {hasLists && tasks.length > 0 && onCreate ? (
         <button type="button" onClick={onCreate} className="flex h-10 items-center gap-1.5 px-3 text-[13px] font-semibold text-[#0c66e4] hover:bg-[#f7f8f9]">
           <Plus size={14} />
           Thêm công việc vào list
@@ -710,12 +713,14 @@ export function BoardView({
   onCreate,
   onMove,
   onOpen,
+  canMove,
 }: {
   statuses: Status[];
   tasks: TaskItem[];
-  onCreate: (statusId: string) => void;
+  onCreate?: (statusId: string) => void;
   onMove: (taskId: string, statusId: string) => void;
   onOpen: (taskId: string) => void;
+  canMove?: (taskId: string) => boolean;
 }) {
   const skipClick = useRef(false);
   const draggingId = useRef("");
@@ -754,7 +759,7 @@ export function BoardView({
               {column.map((task) => (
                 <article
                   key={task.id}
-                  draggable
+                  draggable={canMove ? canMove(task.id) : true}
                   onDragStart={(event) => {
                     draggingId.current = task.id;
                     event.dataTransfer.setData("text/plain", task.id);
@@ -776,17 +781,23 @@ export function BoardView({
                   role="button"
                   tabIndex={0}
                   aria-label={`${task.code} ${task.title}`}
-                  className="cursor-grab rounded-md border border-[#dfe1e6] bg-white px-2.5 py-2 active:cursor-grabbing"
+                  className={`rounded-md border border-[#dfe1e6] bg-white px-2.5 py-2 ${!canMove || canMove(task.id) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                 >
                   <span className="block text-[11px] font-bold text-[#0c66e4]">{task.code}</span>
                   <span className="mt-0.5 block text-[13px] font-medium text-[#172b4d]">{task.title}</span>
-                  <span className="mt-1 block text-[11px] text-[#626f86]">{task.assigneeName ?? "Chưa giao"}</span>
+                  <span className="mt-1 flex items-center justify-between gap-2 text-[11px] text-[#626f86]">
+                    <span className="truncate">{task.assigneeName ?? "Chưa giao"}</span>
+                    <span className="shrink-0">{task.dueAt ? formatDue(task.dueAt) : ""}</span>
+                  </span>
+                  <span className="mt-1 block text-[11px] font-semibold text-[#44546f]">{PRIORITY_LABEL[task.priority]}</span>
                 </article>
               ))}
-              <button type="button" onClick={() => onCreate(status.id)} className="inline-flex items-center gap-1 rounded px-1 py-1.5 text-left text-[12px] font-semibold text-[#626f86] hover:bg-white hover:text-[#0c66e4]">
-                <Plus size={13} />
-                Thêm công việc
-              </button>
+              {onCreate ? (
+                <button type="button" onClick={() => onCreate(status.id)} className="inline-flex items-center gap-1 rounded px-1 py-1.5 text-left text-[12px] font-semibold text-[#626f86] hover:bg-white hover:text-[#0c66e4]">
+                  <Plus size={13} />
+                  Thêm công việc
+                </button>
+              ) : null}
             </div>
           </section>
         );
@@ -872,7 +883,7 @@ function Stat({ icon, tint, label, detail, value }: { icon: ReactNode; tint: str
   );
 }
 
-function Filter({
+export function Filter({
   label,
   value,
   options,

@@ -4,7 +4,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CreateSpaceDto } from './dto/create-space.dto.js';
 import { UpdateSpaceDto } from './dto/update-space.dto.js';
 import { CreateListDto, UpdateListDto } from './dto/list.dto.js';
-import { CreateTaskDto, UpdateTaskDto } from './dto/task.dto.js';
+import { CreateTaskDto, UpdateSpaceSettingsDto, UpdateTaskDto } from './dto/task.dto.js';
 import { SpaceService } from './space.service.js';
 
 @Controller('workspaces/:workspaceId/spaces')
@@ -15,6 +15,21 @@ export class SpaceController {
   @Get()
   list(@Req() request: { user: AuthUser }, @Param('workspaceId') workspaceId: string) {
     return this.spaces.list(request.user, workspaceId);
+  }
+
+  @Get('detailed')
+  detailed(@Req() request: { user: AuthUser }, @Param('workspaceId') workspaceId: string) {
+    return this.spaces.detailedList(request.user, workspaceId);
+  }
+
+  @Patch(':spaceId/settings')
+  settings(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+    @Body() dto: UpdateSpaceSettingsDto,
+  ) {
+    return this.spaces.updateSettings(request.user, workspaceId, spaceId, dto);
   }
 
   @Get(':spaceId')

@@ -34,6 +34,9 @@ model User {
   spaceMemberships SpaceMember[]
   assignedTasks    Task[]            @relation("TaskAssignee")
   reportedTasks    Task[]            @relation("TaskReporter")
+  comments         TaskComment[]     @relation("CommentAuthor")
+  attachments      TaskAttachment[]  @relation("AttachmentUploader")
+  notifications    Notification[]    @relation("NotificationUser")
 
   @@map("users")
 }
@@ -155,6 +158,7 @@ model Space {
   color       SpaceColor   @default(BLUE)
   accessType  AccessType   @default(PRIVATE) @map("access_type")
   views       SpaceView[]
+  memberCanCreateTask Boolean @default(false) @map("member_can_create_task")
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @updatedAt @map("updated_at")
   deletedAt   DateTime?    @map("deleted_at")
@@ -163,6 +167,7 @@ model Space {
   statuses    SpaceStatus[]
   lists       WorkList[]
   tasks       Task[]
+  sprints     Sprint[]
 
   @@index([workspaceId, deletedAt])
   @@map("spaces")
@@ -228,6 +233,7 @@ model Task {
   reporterId  String       @map("reporter_id")
   dueAt       DateTime?    @map("due_at")
   position    Int          @default(0)
+  sprintId    String?      @map("sprint_id")
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @updatedAt @map("updated_at")
   deletedAt   DateTime?    @map("deleted_at")
@@ -236,10 +242,105 @@ model Task {
   status      SpaceStatus  @relation(fields: [statusId], references: [id], onDelete: Restrict)
   assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   reporter    User         @relation("TaskReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  sprint      Sprint?      @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  comments    TaskComment[]
+  attachments TaskAttachment[]
 
   @@index([spaceId, deletedAt])
   @@index([listId])
+  @@index([sprintId])
   @@map("tasks")
+}
+
+enum SprintStatus {
+  PLANNED
+  ACTIVE
+  CLOSED
+}
+
+model Sprint {
+  id        String       @id @default(cuid())
+  spaceId   String       @map("space_id")
+  name      String
+  goal      String?
+  status    SprintStatus @default(PLANNED)
+  startAt   DateTime?    @map("start_at")
+  endAt     DateTime?    @map("end_at")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  space     Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@index([spaceId, status])
+  @@map("sprints")
+}
+
+// kind = COMMENT: bình luận của người dùng; EVENT: dòng lịch sử hệ thống (đổi trạng thái, giao việc...).
+model TaskComment {
+  id         String   @id @default(cuid())
+  taskId     String   @map("task_id")
+  authorId   String   @map("author_id")
+  kind       String   @default("COMMENT")
+  body       String
+  mentionIds String[] @default([]) @map("mention_ids")
+  createdAt  DateTime @default(now()) @map("created_at")
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author     User     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, createdAt])
+  @@map("task_comments")
+}
+
+model TaskAttachment {
+  id         String              @id @default(cuid())
+  taskId     String              @map("task_id")
+  uploaderId String              @map("uploader_id")
+  fileName   String              @map("file_name")
+  mime       String
+  size       Int
+  createdAt  DateTime            @default(now()) @map("created_at")
+  task       Task                @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploader   User                @relation("AttachmentUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+  file       TaskAttachmentFile?
+
+  @@index([taskId, createdAt])
+  @@map("task_attachments")
+}
+
+model TaskAttachmentFile {
+  attachmentId String         @id @map("attachment_id")
+  data         Bytes
+  attachment   TaskAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@map("task_attachment_files")
+}
+
+enum NotificationType {
+  ASSIGNED
+  MENTION
+  COMMENT
+  STATUS
+  REVIEW
+  DEADLINE
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String           @map("user_id")
+  workspaceId String           @map("workspace_id")
+  spaceId     String?          @map("space_id")
+  taskId      String?          @map("task_id")
+  type        NotificationType
+  title       String
+  body        String?
+  dedupeKey   String?          @map("dedupe_key")
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  user        User             @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, workspaceId, createdAt])
+  @@map("notifications")
 }
 
 model AuditLog {

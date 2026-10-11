@@ -14,6 +14,7 @@ import {
 import { api } from "@/lib/api";
 import { ListDialog } from "@/components/spaces/list-dialog";
 import TaskDialog from "@/components/spaces/task-detail";
+import { MemberCreateTaskDialog, MemberTaskDialog } from "@/components/member/member-task-dialog";
 import { useShellUser } from "@/components/shell/shell-user";
 import { CreateSpaceDialog, spaceIcon, spaceSwatch, type SpaceColor, type SpaceIcon } from "@/components/workspaces/space-dialog";
 
@@ -60,6 +61,9 @@ type MemberItem = {
 type SpaceDetail = {
   id: string;
   name: string;
+  description?: string | null;
+  accessType?: string;
+  memberCanCreateTask?: boolean;
   icon: string;
   color: string;
   workspaceName: string;
@@ -102,9 +106,12 @@ function formatDue(value: string | null) {
 export function LeaderProjects({
   workspaceId,
   workspaceName,
+  readOnly = false,
 }: {
   workspaceId: string;
   workspaceName: string;
+  // Member: chỉ xem cấu trúc Space/List và mở chi tiết task, không tạo/sửa/xóa.
+  readOnly?: boolean;
 }) {
   const [spaces, setSpaces] = useState<SpaceItem[]>([]);
   const [detail, setDetail] = useState<SpaceDetail | null>(null);
@@ -117,9 +124,11 @@ export function LeaderProjects({
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [creatingSpace, setCreatingSpace] = useState(false);
+  const [memberCreating, setMemberCreating] = useState(false);
   const [creatingList, setCreatingList] = useState(false);
   const [pickingList, setPickingList] = useState(false);
   const [editor, setEditor] = useState<{ listId: string } | null>(null);
+  const [viewingId, setViewingId] = useState("");
   const loadedFor = useRef("");
   const seenSpace = useRef("");
   const focusList = useRef<string | null>(null);
@@ -204,6 +213,17 @@ export function LeaderProjects({
     setRevision((value) => value + 1);
   }
 
+  async function toggleMemberCreate(next: boolean) {
+    if (!detail) return;
+    setDetail({ ...detail, memberCanCreateTask: next });
+    try {
+      await api.patch(`/workspaces/${workspaceId}/spaces/${detail.id}/settings`, { memberCanCreateTask: next });
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không cập nhật được quyền");
+    }
+    refresh();
+  }
+
   function createTask() {
     if (!spaceId || !detail) {
       setCreatingSpace(true);
@@ -263,22 +283,26 @@ export function LeaderProjects({
             className="h-9 w-full rounded-[4px] border border-[#dfe1e6] bg-[#f7f8f9] pr-3 pl-8 text-[13px] text-[#172b4d] outline-none placeholder:text-[#7a869a] focus:border-[#0c66e4] focus:bg-white"
           />
         </label>
-        <button
-          type="button"
-          className="inline-flex h-8 items-center gap-1.5 rounded-[4px] px-2.5 text-[13px] text-[#44546f] hover:bg-[#f1f2f4]"
-        >
-          <SlidersHorizontal className="size-3.5" />
-          Bộ lọc
-        </button>
-        <button
-          type="button"
-          className="inline-flex h-8 items-center gap-1.5 rounded-[4px] px-2.5 text-[13px] text-[#44546f] hover:bg-[#f1f2f4]"
-        >
-          <Calendar className="size-3.5" />
-          Tuần này
-        </button>
+        {readOnly ? null : (
+          <>
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[4px] px-2.5 text-[13px] text-[#44546f] hover:bg-[#f1f2f4]"
+            >
+              <SlidersHorizontal className="size-3.5" />
+              Bộ lọc
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-[4px] px-2.5 text-[13px] text-[#44546f] hover:bg-[#f1f2f4]"
+            >
+              <Calendar className="size-3.5" />
+              Tuần này
+            </button>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-2">
-          <span className="relative">
+          <span className="relative" hidden={readOnly}>
             <button
               type="button"
               onClick={createTask}
@@ -318,6 +342,7 @@ export function LeaderProjects({
             </div>
             <button
               type="button"
+              hidden={readOnly}
               aria-label="Tạo space"
               onClick={() => setCreatingSpace(true)}
               className="grid size-7 shrink-0 place-items-center rounded-[4px] text-[#44546f] hover:bg-[#ebecf0]"
@@ -330,9 +355,10 @@ export function LeaderProjects({
               <p className="px-3 py-4 text-[13px] text-[#626f86]">Đang tải space...</p>
             ) : visibleSpaces.length === 0 ? (
               <div className="px-3 py-4">
-                <p className="text-[13px] text-[#626f86]">Chưa có space trong workspace này.</p>
+                <p className="text-[13px] text-[#626f86]">{readOnly ? "Bạn chưa được cấp quyền vào Space nào." : "Chưa có space trong workspace này."}</p>
                 <button
                   type="button"
+                  hidden={readOnly}
                   onClick={() => setCreatingSpace(true)}
                   className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-[4px] bg-[#0c66e4] px-3 text-[12px] font-medium text-white"
                 >
@@ -405,6 +431,7 @@ export function LeaderProjects({
                         )}
                         <button
                           type="button"
+                          hidden={readOnly}
                           onClick={() => setCreatingList(true)}
                           className="mt-1 flex h-8 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[13px] text-[#0c66e4] hover:bg-white"
                         >
@@ -451,13 +478,43 @@ export function LeaderProjects({
             </div>
           </div>
 
+          {readOnly && detail ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-[#eef0f3] bg-[#fafbfc] px-5 py-2 text-[12px] text-[#626f86]">
+              {detail.description ? <span className="min-w-0 truncate">{detail.description}</span> : null}
+              <span>{detail.accessType === "PUBLIC" ? "Công khai trong workspace" : "Riêng tư"}</span>
+              <span>
+                {detail.members.length} thành viên
+                {detail.members.length > 0 ? ": " + detail.members.slice(0, 4).map((member) => member.name).join(", ") + (detail.members.length > 4 ? "…" : "") : ""}
+              </span>
+              {detail.memberCanCreateTask && detail.lists.length > 0 ? (
+                <button type="button" onClick={() => setMemberCreating(true)} className="ml-auto inline-flex h-7 items-center gap-1 rounded bg-[#0c66e4] px-2.5 text-[12px] font-semibold text-white">
+                  <Plus className="size-3.5" />
+                  Tạo công việc
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!readOnly && detail ? (
+            <label className="flex w-full cursor-pointer items-center gap-2 border-b border-[#eef0f3] bg-[#fafbfc] px-5 py-2 text-[12px] text-[#44546f]">
+              <input
+                type="checkbox"
+                checked={Boolean(detail.memberCanCreateTask)}
+                onChange={(event) => void toggleMemberCreate(event.target.checked)}
+                className="size-3.5 accent-[#0c66e4]"
+              />
+              Cho phép thành viên tạo công việc trong Space này
+            </label>
+          ) : null}
+
           <div className="min-h-0 flex-1 overflow-auto">
             {error ? <p className="px-5 py-4 text-[13px] text-[#ca3521]">{error}</p> : null}
             {!selectedSpace && !loading ? (
               <div className="px-5 py-8">
-                <p className="text-[13px] text-[#626f86]">Workspace này chưa có space nào.</p>
+                <p className="text-[13px] text-[#626f86]">{readOnly ? "Bạn chưa được cấp quyền vào Space nào." : "Workspace này chưa có space nào."}</p>
                 <button
                   type="button"
+                  hidden={readOnly}
                   onClick={() => setCreatingSpace(true)}
                   className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-[4px] bg-[#0c66e4] px-3 text-[12px] font-medium text-white"
                 >
@@ -474,6 +531,7 @@ export function LeaderProjects({
                 <p className="text-[13px] text-[#626f86]">Space này chưa có list.</p>
                 <button
                   type="button"
+                  hidden={readOnly}
                   onClick={() => setCreatingList(true)}
                   className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-[4px] bg-[#0c66e4] px-3 text-[12px] font-medium text-white"
                 >
@@ -516,10 +574,20 @@ export function LeaderProjects({
                         const status = task.statusId ? statusName.get(task.statusId) : undefined;
                         const priority = PRIORITY[task.priority] ?? PRIORITY.MEDIUM;
                         return (
-                          <tr key={task.id} className="h-11 border-b border-[#f1f2f4] text-[13px] text-[#172b4d] hover:bg-[#f7f8f9]">
+                          <tr
+                            key={task.id}
+                            onClick={readOnly ? () => setViewingId(task.id) : undefined}
+                            className={`h-11 border-b border-[#f1f2f4] text-[13px] text-[#172b4d] hover:bg-[#f7f8f9] ${readOnly ? "cursor-pointer" : ""}`}
+                          >
                             <td className="px-5 font-medium text-[#626f86]">{task.code}</td>
                             <td className="px-2">
-                              <span className="line-clamp-1">{task.title}</span>
+                              {readOnly ? (
+                                <button type="button" onClick={() => setViewingId(task.id)} className="line-clamp-1 text-left hover:text-[#0c66e4]">
+                                  {task.title}
+                                </button>
+                              ) : (
+                                <span className="line-clamp-1">{task.title}</span>
+                              )}
                             </td>
                             <td className="px-2">
                               {task.assigneeName ? (
@@ -555,7 +623,9 @@ export function LeaderProjects({
         </section>
       </div>
 
-      {creatingSpace ? (
+      {memberCreating && detail ? <MemberCreateTaskDialog spaceId={detail.id} presetListId={listId || undefined} onClose={() => { setMemberCreating(false); refresh(); }} /> : null}
+      {viewingId ? <MemberTaskDialog taskId={viewingId} onClose={() => { setViewingId(""); refresh(); }} /> : null}
+      {creatingSpace && !readOnly ? (
         <CreateSpaceDialog
           workspaceId={workspaceId}
           onClose={() => setCreatingSpace(false)}

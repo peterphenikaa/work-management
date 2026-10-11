@@ -3,6 +3,7 @@
 import { AdminDashboard } from "@/components/home/admin-dashboard";
 import { LeaderDashboard } from "@/components/leader/leader-dashboard";
 import { useLeader } from "@/components/leader/leader-shell";
+import { MemberWorkspace } from "@/components/member/member-workspace";
 import { AppShell, useShellUser } from "@/components/shell/app-shell";
 import { WorkspaceInvites } from "@/components/workspaces/workspace-invites";
 import { ROLE_LABEL } from "@/lib/roles";
@@ -32,7 +33,7 @@ function MemberHome({ name, roleLabel }: { name: string; roleLabel: string }) {
     return (
       <>
         <WorkspaceInvites inset onAccepted={(workspaceId) => void leader.reload(workspaceId)} />
-        <LeaderDashboard />
+        {leader.current.role === "MEMBER" ? <MemberWorkspace /> : <LeaderDashboard />}
       </>
     );
   }

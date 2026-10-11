@@ -11,7 +11,8 @@ const inputClass =
 
 const ACCOUNTS = [
   { label: "Admin", email: "admin@northstar.vn", password: "Northstar1" },
-  { label: "User", email: "thanhbinh58058@gmail.com", password: "acebinh123" },
+  { label: "Leader", email: "thanhbinh58058@gmail.com", password: "acebinh123" },
+  { label: "Member", email: "member@northstar.vn", password: "Northstar1" },
 ] as const;
 
 export function LoginScreen() {
@@ -97,7 +98,6 @@ export function LoginScreen() {
                 className={`${inputClass} pr-9`}
               />
             </label>
-            <span className="-mt-1 self-end text-[10px] font-semibold text-[#0052cc]">Quên mật khẩu?</span>
             {waiting ? (
               <p className="rounded bg-[#fff7d6] px-2.5 py-2 text-[11px] leading-4 text-[#7f5f01]">{waiting}</p>
             ) : null}

@@ -9,6 +9,7 @@ import { ROLE_LABEL, initials } from "@/lib/roles";
 import { useLeader } from "@/components/leader/leader-shell";
 import { LeaderProjects } from "@/components/leader/leader-projects";
 import { BoardView } from "@/components/spaces/space-detail";
+import { LeaderSprints } from "@/components/leader/leader-sprints";
 import { ListDialog } from "@/components/spaces/list-dialog";
 import TaskDialog, { type TaskDraft } from "@/components/spaces/task-detail";
 import { useShellUser } from "@/components/shell/shell-user";
@@ -287,7 +288,7 @@ function TabBody({
       />
     );
   }
-  if (tab === "sprint") return <SprintEmpty count={overview.activeSprints} />;
+  if (tab === "sprint") return <LeaderSprints workspaceId={workspaceId} workspaceName={workspaceName} onChanged={onChanged} />;
   if (tab === "reports") return <Reports overview={overview} />;
   return <DashboardBody overview={overview} />;
 }
@@ -736,15 +737,6 @@ function TaskCreator({
       currentUserId={user?.id ?? ""}
       onClose={onClose}
       onSaved={onSaved}
-    />
-  );
-}
-
-function SprintEmpty({ count }: { count: number }) {
-  return (
-    <EmptyCard
-      title={count === 0 ? "Chưa có Sprint đang chạy" : `${count} Sprint đang hoạt động`}
-      detail="Sprint được lập trong từng Space. Workspace này chưa có Sprint active."
     />
   );
 }
