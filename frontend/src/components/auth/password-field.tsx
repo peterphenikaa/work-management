@@ -9,6 +9,8 @@ type PasswordFieldProps = {
   placeholder: string;
   autoComplete: string;
   minLength?: number;
+  className?: string;
+  id?: string;
 };
 
 export function PasswordField({
@@ -17,12 +19,15 @@ export function PasswordField({
   placeholder,
   autoComplete,
   minLength = 8,
+  className,
+  id,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
   return (
     <div className="relative">
       <input
+        id={id}
         type={visible ? "text" : "password"}
         required
         minLength={minLength}
@@ -30,7 +35,10 @@ export function PasswordField({
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded border border-[#c7cdd6] px-2.5 pr-9 text-xs outline-none focus:border-[#0c66e4] focus:shadow-[0_0_0_1px_#0c66e4]"
+        className={
+          className ??
+          "h-10 w-full rounded border border-[#c7cdd6] px-2.5 pr-9 text-xs outline-none focus:border-[#0c66e4] focus:shadow-[0_0_0_1px_#0c66e4]"
+        }
       />
       <button
         type="button"

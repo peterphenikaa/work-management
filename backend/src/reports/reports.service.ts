@@ -140,12 +140,9 @@ export class ReportsService {
 
   private async allowedWorkspaceIds(actor: AuthUser) {
     if (actor.role === 'ADMIN') return null;
-    if (actor.role !== 'LEADER') {
-      throw new ForbiddenException('Chỉ quản trị viên và trưởng nhóm xem được báo cáo');
-    }
     const [memberships, owned] = await Promise.all([
       this.prisma.workspaceMember.findMany({
-        where: { userId: actor.id, status: 'ACTIVE', role: 'LEADER' },
+        where: { userId: actor.id, status: 'ACTIVE', role: { in: ['ADMIN', 'LEADER'] } },
         select: { workspaceId: true },
       }),
       this.prisma.workspace.findMany({
@@ -153,7 +150,11 @@ export class ReportsService {
         select: { id: true },
       }),
     ]);
-    return [...new Set([...memberships.map((row) => row.workspaceId), ...owned.map((row) => row.id)])];
+    const ids = [...new Set([...memberships.map((row) => row.workspaceId), ...owned.map((row) => row.id)])];
+    if (ids.length === 0) {
+      throw new ForbiddenException('Chỉ quản trị viên và trưởng nhóm của workspace xem được báo cáo');
+    }
+    return ids;
   }
 
   private async resolveSpace(spaceId: string | undefined, workspaceId: string | null, allowed: string[] | null) {

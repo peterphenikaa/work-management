@@ -15,7 +15,7 @@ type Person = {
   locked: boolean;
 };
 
-const ROLES: Role[] = ["ADMIN", "LEADER", "MEMBER"];
+const ACCOUNT_ROLES = ["ADMIN", "MEMBER"] as const;
 const AVATAR = ["#5e4db2", "#6e5dc6", "#e56910", "#159b91", "#0c66e4", "#ae4787"];
 const ROLE_TONE: Record<Role, string> = {
   ADMIN: "bg-[#f3f0ff] text-[#5e4db2]",
@@ -166,7 +166,7 @@ export function MembersScreen() {
                           onChange={(event) => void changeRole(person, event.target.value as Role)}
                           className={`h-7 rounded-full px-2.5 text-[12px] font-semibold outline-none disabled:opacity-70 ${ROLE_TONE[person.role]}`}
                         >
-                          {ROLES.map((role) => (
+                          {ACCOUNT_ROLES.map((role) => (
                             <option key={role} value={role}>
                               {ROLE_LABEL[role]}
                             </option>
@@ -234,7 +234,7 @@ export function MembersScreen() {
           <div className="m-4 rounded-lg bg-[#e9f2ff] px-4 py-3">
             <p className="text-[13px] font-semibold text-[#0c66e4]">Phân quyền theo vai trò</p>
             <p className="mt-1 text-[13px] leading-5 text-[#44546f]">
-              Quản trị viên quản lý toàn bộ không gian. Trưởng nhóm quản lý Sprint và thành viên trong không gian. Thành viên có thể xem và cập nhật công việc được giao.
+              Tài khoản chỉ có Quản trị viên và Thành viên. Trưởng nhóm là ghế trong workspace, sau khi tài khoản Thành viên được mời.
             </p>
           </div>
         </div>

@@ -14,7 +14,7 @@ const users = [
   {
     email: 'leader@northstar.vn',
     name: 'Nguyễn Minh Khoa',
-    role: 'LEADER',
+    role: 'MEMBER',
   },
   {
     email: 'member@northstar.vn',
@@ -22,6 +22,8 @@ const users = [
     role: 'MEMBER',
   },
 ];
+
+await prisma.user.updateMany({ where: { role: 'LEADER' }, data: { role: 'MEMBER' } });
 
 for (const user of users) {
   await prisma.user.upsert({

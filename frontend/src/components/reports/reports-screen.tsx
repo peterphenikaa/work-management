@@ -114,7 +114,7 @@ export function ReportsScreen() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    if (!user || user.role === "MEMBER") return;
+    if (!user) return;
     const controller = new AbortController();
     setLoading(true);
     api
@@ -165,14 +165,6 @@ export function ReportsScreen() {
     } finally {
       setExporting(false);
     }
-  }
-
-  if (user && user.role === "MEMBER") {
-    return (
-      <section className="px-8 pt-8 text-[14px] text-[#626f86]">
-        Chỉ quản trị viên và trưởng nhóm xem được báo cáo.
-      </section>
-    );
   }
 
   const maxStatus = Math.max(1, ...(report?.statusDistribution.map((row) => row.count) ?? [1]));
