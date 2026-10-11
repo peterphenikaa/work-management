@@ -105,7 +105,7 @@ export function TaskDialog({
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? "");
   const [reporterId, setReporterId] = useState(task?.reporterId || fallbackReporter);
   const [dueAt, setDueAt] = useState(task?.dueAt ? task.dueAt.slice(0, 10) : "");
-  const [checks, setChecks] = useState<CheckItem[]>(() => loadExtra(task?.id).checks);
+  const [checks, setChecks] = useState<CheckItem[]>([]);
   const [checkDraft, setCheckDraft] = useState("");
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
@@ -142,19 +142,72 @@ export function TaskDialog({
 
   useEffect(() => {
     if (!task) return;
-    saveExtra(task.id, checks);
-  }, [task, checks]);
+    let cancelled = false;
+    api
+      .get<{ items: CheckItem[] }>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}/checks`)
+      .then((response) => {
+        if (!cancelled) setChecks(response.data.items);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId, task, workspaceId]);
 
   const reporterOptions = roster.map((member) => ({ id: member.userId, label: member.name }));
   if (task && !memberIds.has(task.reporterId)) {
     reporterOptions.unshift({ id: task.reporterId, label: task.reporterName });
   }
 
-  function addCheck() {
+  async function addCheck() {
     const value = checkDraft.trim();
     if (!value) return;
-    setChecks((current) => [...current, { id: crypto.randomUUID(), title: value, done: false }]);
     setCheckDraft("");
+    if (!task) {
+      setChecks((current) => [...current, { id: crypto.randomUUID(), title: value, done: false }]);
+      return;
+    }
+    try {
+      const response = await api.post<CheckItem>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}/checks`, { title: value });
+      setChecks((current) => [...current, response.data]);
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không thêm được mục checklist");
+    }
+  }
+
+  async function toggleCheck(item: CheckItem) {
+    const done = !item.done;
+    setChecks((current) => current.map((row) => (row.id === item.id ? { ...row, done } : row)));
+    if (!task) return;
+    try {
+      await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}/checks/${item.id}`, { done });
+    } catch (reason: unknown) {
+      setChecks((current) => current.map((row) => (row.id === item.id ? { ...row, done: item.done } : row)));
+      setError(reason instanceof Error ? reason.message : "Không cập nhật được checklist");
+    }
+  }
+
+  async function renameCheck(item: CheckItem, title: string) {
+    const next = title.trim();
+    if (!next) return;
+    setChecks((current) => current.map((row) => (row.id === item.id ? { ...row, title: next } : row)));
+    if (!task) return;
+    try {
+      await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}/checks/${item.id}`, { title: next });
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không cập nhật được checklist");
+    }
+  }
+
+  async function removeCheck(item: CheckItem) {
+    setChecks((current) => current.filter((row) => row.id !== item.id));
+    if (!task) return;
+    try {
+      await api.delete(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}/checks/${item.id}`);
+    } catch (reason: unknown) {
+      setChecks((current) => [...current, item]);
+      setError(reason instanceof Error ? reason.message : "Không xóa được mục checklist");
+    }
   }
 
   // M05.09: cảnh báo khi đóng form tạo công việc đang nhập dở.
@@ -183,7 +236,6 @@ export function TaskDialog({
         if (target !== task.statusId) {
           await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}`, { statusId: target });
         }
-        saveExtra(task.id, checks);
         onSaved();
       } catch (reason: unknown) {
         setError(reason instanceof Error ? reason.message : "Không cập nhật được công việc");
@@ -204,10 +256,12 @@ export function TaskDialog({
     try {
       if (creating) {
         const response = await api.post<{ id: string }>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks`, payload);
-        saveExtra(response.data.id, checks);
+        for (const item of checks) {
+          const created = await api.post<CheckItem>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${response.data.id}/checks`, { title: item.title });
+          if (item.done) await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${response.data.id}/checks/${created.data.id}`, { done: true });
+        }
       } else {
         await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}`, payload);
-        saveExtra(task.id, checks);
       }
       onSaved();
     } catch (reason: unknown) {
@@ -325,33 +379,30 @@ export function TaskDialog({
                     <button
                       type="button"
                       aria-label={item.done ? "Đánh dấu chưa xong" : "Đánh dấu đã xong"}
-                      onClick={() => setChecks((current) => current.map((row) => (row.id === item.id ? { ...row, done: !row.done } : row)))}
+                      onClick={() => void toggleCheck(item)}
                       className={`grid size-4 shrink-0 place-items-center rounded-[3px] border ${item.done ? "border-[#0c66e4] bg-[#0c66e4] text-white" : "border-[#b3b9c4] bg-white"}`}
                     >
                       {item.done ? <Check size={11} strokeWidth={3} /> : null}
                     </button>
                     <input
                       value={item.title}
-                      readOnly={locked}
                       onChange={(event) => setChecks((current) => current.map((row) => (row.id === item.id ? { ...row, title: event.target.value } : row)))}
+                      onBlur={(event) => void renameCheck(item, event.target.value)}
                       className={`min-w-0 flex-1 border-0 bg-transparent text-[13px] outline-none ${item.done ? "text-[#626f86] line-through" : "text-[#172b4d]"}`}
                     />
-                    {locked ? null : (
-                      <button
+                    <button
                         type="button"
                         aria-label="Xóa mục"
-                        onClick={() => setChecks((current) => current.filter((row) => row.id !== item.id))}
+                        onClick={() => void removeCheck(item)}
                         className="grid size-6 place-items-center rounded text-[#626f86] opacity-0 group-hover:opacity-100 hover:bg-white"
                       >
                         <Trash2 size={13} />
                       </button>
-                    )}
                   </li>
                 ))}
               </ul>
-              {checks.length === 0 && locked ? <p className="mt-3 text-[12px] text-[#626f86]">Công việc chưa có checklist.</p> : null}
+              {checks.length === 0 ? <p className="mt-3 text-[12px] text-[#626f86]">Chưa có mục checklist.</p> : null}
               <form
-                hidden={locked}
                 className="mt-2 flex items-center gap-2"
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -528,22 +579,3 @@ function formatWhen(iso: string) {
   return new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
-function extraKey(taskId: string) {
-  return `northstar.task.extra.${taskId}`;
-}
-
-function loadExtra(taskId?: string) {
-  if (!taskId || typeof window === "undefined") return { checks: [] as CheckItem[] };
-  try {
-    const raw = window.localStorage.getItem(extraKey(taskId));
-    if (!raw) return { checks: [] as CheckItem[] };
-    const parsed = JSON.parse(raw) as { checks?: CheckItem[] };
-    return { checks: Array.isArray(parsed.checks) ? parsed.checks : [] };
-  } catch {
-    return { checks: [] as CheckItem[] };
-  }
-}
-
-function saveExtra(taskId: string, checks: CheckItem[]) {
-  window.localStorage.setItem(extraKey(taskId), JSON.stringify({ checks }));
-}

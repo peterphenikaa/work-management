@@ -245,6 +245,7 @@ model Task {
   sprint      Sprint?      @relation(fields: [sprintId], references: [id], onDelete: SetNull)
   comments    TaskComment[]
   attachments TaskAttachment[]
+  checks      TaskCheckItem[]
 
   @@index([spaceId, deletedAt])
   @@index([listId])
@@ -273,6 +274,19 @@ model Sprint {
 
   @@index([spaceId, status])
   @@map("sprints")
+}
+
+model TaskCheckItem {
+  id        String   @id @default(cuid())
+  taskId    String   @map("task_id")
+  title     String
+  done      Boolean  @default(false)
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, position])
+  @@map("task_check_items")
 }
 
 // kind = COMMENT: bình luận của người dùng; EVENT: dòng lịch sử hệ thống (đổi trạng thái, giao việc...).

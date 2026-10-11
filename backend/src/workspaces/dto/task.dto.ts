@@ -118,6 +118,27 @@ export class CreateCommentDto {
   mentionIds?: string[];
 }
 
+export class CreateCheckDto {
+  @Transform(({ value }) => trimToString(value))
+  @IsString()
+  @MinLength(1, { message: 'Mục checklist không được để trống' })
+  @MaxLength(200)
+  title!: string;
+}
+
+export class UpdateCheckDto {
+  @IsOptional()
+  @Transform(({ value }) => trimToString(value))
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  done?: boolean;
+}
+
 export class CreateSprintDto {
   @Transform(({ value }) => trimToString(value))
   @IsString()

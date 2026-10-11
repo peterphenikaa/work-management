@@ -6,7 +6,6 @@ import {
   CircleUser,
   Ellipsis,
   LayoutGrid,
-  Search,
   Settings,
   Users,
 } from "lucide-react";
@@ -18,6 +17,7 @@ import { ROLE_LABEL, initials } from "@/lib/roles";
 import { LeaderExperience } from "@/components/leader/leader-shell";
 import { ShellUserContext } from "@/components/shell/shell-user";
 import { NotificationBell } from "@/components/shell/notification-bell";
+import { QuickSearch } from "@/components/shell/quick-search";
 import { UserMenu } from "@/components/shell/user-menu";
 
 export { useShellUser } from "@/components/shell/shell-user";
@@ -102,14 +102,7 @@ function ManagementChrome({ user, children }: { user: AuthUser; children: React.
             W
           </span>
 
-          <label className="relative h-9 w-full">
-            <Search size={15} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#172b4d]" />
-            <input
-              readOnly
-              placeholder="Tìm kiếm hoặc chuyển nhanh..."
-              className="h-9 w-full rounded-[5px] border border-[#c7cdd6] bg-[#f7f8f9] pr-3 pl-9 text-[13px] outline-none placeholder:text-[#7a869a]"
-            />
-          </label>
+          <QuickSearch />
 
           <div className="flex items-center justify-end gap-3">
             <NotificationBell />

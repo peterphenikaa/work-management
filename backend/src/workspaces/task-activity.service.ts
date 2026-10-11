@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.types.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { CreateCommentDto } from './dto/task.dto.js';
+import { CreateCheckDto, CreateCommentDto, UpdateCheckDto } from './dto/task.dto.js';
 import { NotificationService } from './notification.service.js';
 import { SpaceService } from './space.service.js';
 
@@ -24,6 +24,58 @@ export class TaskActivityService {
     private readonly spaces: SpaceService,
     private readonly notifications: NotificationService,
   ) {}
+
+  async checks(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string) {
+    await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
+    const rows = await this.prisma.taskCheckItem.findMany({
+      where: { taskId },
+      orderBy: { position: 'asc' },
+    });
+    return { items: rows.map((row) => this.presentCheck(row)) };
+  }
+
+  async addCheck(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string, dto: CreateCheckDto) {
+    await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
+    const count = await this.prisma.taskCheckItem.count({ where: { taskId } });
+    if (count >= 50) throw new BadRequestException('Checklist tối đa 50 mục');
+    const created = await this.prisma.taskCheckItem.create({
+      data: { taskId, title: dto.title, position: count },
+    });
+    return this.presentCheck(created);
+  }
+
+  async updateCheck(
+    actor: AuthUser,
+    workspaceId: string,
+    spaceId: string,
+    taskId: string,
+    checkId: string,
+    dto: UpdateCheckDto,
+  ) {
+    await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
+    const current = await this.prisma.taskCheckItem.findFirst({ where: { id: checkId, taskId } });
+    if (!current) throw new NotFoundException('Không tìm thấy mục checklist');
+    const updated = await this.prisma.taskCheckItem.update({
+      where: { id: current.id },
+      data: {
+        title: dto.title ?? current.title,
+        done: dto.done ?? current.done,
+      },
+    });
+    return this.presentCheck(updated);
+  }
+
+  async removeCheck(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string, checkId: string) {
+    await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
+    const current = await this.prisma.taskCheckItem.findFirst({ where: { id: checkId, taskId } });
+    if (!current) throw new NotFoundException('Không tìm thấy mục checklist');
+    await this.prisma.taskCheckItem.delete({ where: { id: current.id } });
+    return { ok: true };
+  }
+
+  private presentCheck(row: { id: string; title: string; done: boolean }) {
+    return { id: row.id, title: row.title, done: row.done };
+  }
 
   async comments(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string) {
     await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);

@@ -10,7 +10,6 @@ import {
   LayoutGrid,
   List,
   Repeat,
-  Search,
   SquareKanban,
   type LucideIcon,
 } from "lucide-react";
@@ -24,6 +23,7 @@ import { WorkspaceSwitcher } from "@/components/leader/workspace-switcher";
 import { type MineWorkspace } from "@/components/leader/workspace-mark";
 import { MemberDataProvider, useMemberData } from "@/components/member/member-data";
 import { NotificationBell } from "@/components/shell/notification-bell";
+import { QuickSearch } from "@/components/shell/quick-search";
 import { UserMenu } from "@/components/shell/user-menu";
 
 const STORAGE_KEY = "northstar-workspace";
@@ -193,17 +193,7 @@ function LeaderChrome({ user, children }: { user: AuthUser; children: React.Reac
         <span className="grid size-7 place-items-center rounded-[6px] bg-gradient-to-br from-[#0c66e4] to-[#0747a6] text-sm font-bold text-white">
           W
         </span>
-        <label className="relative h-9 w-full">
-          <Search size={15} className="absolute top-1/2 left-3 -translate-y-1/2 text-[#172b4d]" />
-          <input
-            readOnly
-            placeholder="Tìm kiếm hoặc chuyển nhanh..."
-            className="h-9 w-full rounded-[6px] border border-[#dfe1e6] bg-[#f7f8f9] pr-14 pl-9 text-[13px] outline-none placeholder:text-[#7a869a]"
-          />
-          <kbd className="absolute top-1/2 right-2 -translate-y-1/2 rounded-[4px] border border-[#dfe1e6] bg-white px-1.5 py-0.5 text-[11px] text-[#626f86]">
-            ⌘K
-          </kbd>
-        </label>
+        <QuickSearch />
         <div className="flex items-center justify-end gap-3">
           {isMember ? (
             <Link href="/home?tab=notifications" aria-label={unread > 0 ? `Thông báo, ${unread} chưa đọc` : "Thông báo"} className="relative grid size-8 place-items-center text-[#626f86] hover:text-[#172b4d]">

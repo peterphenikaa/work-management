@@ -5,6 +5,8 @@ import { NotificationController } from './notification.controller.js';
 import { NotificationService } from './notification.service.js';
 import { SpaceController } from './space.controller.js';
 import { SpaceService } from './space.service.js';
+import { SearchController } from './search.controller.js';
+import { SearchService } from './search.service.js';
 import { SprintController } from './sprint.controller.js';
 import { SprintService } from './sprint.service.js';
 import { TaskActivityController } from './task-activity.controller.js';
@@ -14,7 +16,7 @@ import { WorkspaceService } from './workspace.service.js';
 
 @Module({
   imports: [AuthModule],
-  controllers: [WorkspaceController, SpaceController, TaskActivityController, SprintController, NotificationController, InboxController],
-  providers: [WorkspaceService, SpaceService, NotificationService, TaskActivityService, SprintService],
+  controllers: [WorkspaceController, SpaceController, TaskActivityController, SprintController, NotificationController, InboxController, SearchController],
+  providers: [WorkspaceService, SpaceService, NotificationService, TaskActivityService, SprintService, SearchService],
 })
 export class WorkspaceModule {}

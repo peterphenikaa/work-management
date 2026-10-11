@@ -1,26 +1,58 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Req,
-  StreamableFile,
-  UploadedFile,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { AuthUser } from '../auth/auth.types.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
-import { CreateCommentDto } from './dto/task.dto.js';
+import { CreateCheckDto, CreateCommentDto, UpdateCheckDto } from './dto/task.dto.js';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { MAX_ATTACHMENT_BYTES, TaskActivityService, type UploadedBlob } from './task-activity.service.js';
 
 @Controller('workspaces/:workspaceId/spaces/:spaceId/tasks/:taskId')
 @UseGuards(JwtAuthGuard)
 export class TaskActivityController {
   constructor(private readonly activity: TaskActivityService) {}
+
+  @Get('checks')
+  checks(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+    @Param('taskId') taskId: string,
+  ) {
+    return this.activity.checks(request.user, workspaceId, spaceId, taskId);
+  }
+
+  @Post('checks')
+  addCheck(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+    @Param('taskId') taskId: string,
+    @Body() dto: CreateCheckDto,
+  ) {
+    return this.activity.addCheck(request.user, workspaceId, spaceId, taskId, dto);
+  }
+
+  @Patch('checks/:checkId')
+  updateCheck(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+    @Param('taskId') taskId: string,
+    @Param('checkId') checkId: string,
+    @Body() dto: UpdateCheckDto,
+  ) {
+    return this.activity.updateCheck(request.user, workspaceId, spaceId, taskId, checkId, dto);
+  }
+
+  @Delete('checks/:checkId')
+  removeCheck(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+    @Param('taskId') taskId: string,
+    @Param('checkId') checkId: string,
+  ) {
+    return this.activity.removeCheck(request.user, workspaceId, spaceId, taskId, checkId);
+  }
 
   @Get('comments')
   comments(
