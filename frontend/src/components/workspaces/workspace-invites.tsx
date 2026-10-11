@@ -12,7 +12,13 @@ type PendingInvite = {
   expiresAt: string;
 };
 
-export function WorkspaceInvites({ inset = false }: { inset?: boolean }) {
+export function WorkspaceInvites({
+  inset = false,
+  onAccepted,
+}: {
+  inset?: boolean;
+  onAccepted?: (workspaceId: string) => void;
+}) {
   const [items, setItems] = useState<PendingInvite[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -39,7 +45,9 @@ export function WorkspaceInvites({ inset = false }: { inset?: boolean }) {
     setError("");
     try {
       await api.post(`/workspaces/invitations/${id}/accept`);
+      const accepted = items.find((item) => item.id === id);
       setItems((current) => current.filter((item) => item.id !== id));
+      if (accepted) onAccepted?.(accepted.workspaceId);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Không tham gia được workspace");
       setBusyId(null);

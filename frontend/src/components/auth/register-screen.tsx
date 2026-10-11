@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AuthFrame, authFieldClass } from "@/components/auth/auth-frame";
 import { PasswordField } from "@/components/auth/password-field";
 import { api, type LoginResponse } from "@/lib/api";
+
+const inputClass =
+  "h-10 w-full rounded border border-[#c7cdd6] px-2.5 text-xs outline-none focus:border-[#0c66e4] focus:shadow-[0_0_0_1px_#0c66e4]";
 
 export function RegisterScreen() {
   const router = useRouter();
@@ -46,85 +48,96 @@ export function RegisterScreen() {
   }
 
   return (
-    <AuthFrame>
-      <header className="mb-6">
-        <h1 className="text-[28px] font-semibold tracking-tight">Tạo tài khoản</h1>
-        <p className="mt-2 text-sm text-[#626f86]">Bắt đầu quản lý công việc cùng nhóm.</p>
-      </header>
+    <main className="flex min-h-full flex-1 items-center justify-center bg-[#f7f8f9] px-5 py-10 text-[#172b4d]">
+      <div className="flex w-full max-w-[400px] flex-col items-center">
+        <div className="mb-6 flex items-center gap-2.5">
+          <span className="flex size-7 items-center justify-center rounded-md bg-gradient-to-br from-[#0c66e4] to-[#0747a6] text-sm font-bold text-white">
+            W
+          </span>
+          <span className="text-[17px] font-semibold tracking-tight">Northstar Work</span>
+        </div>
 
-      <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-[#44546f]">Họ và tên</span>
-          <input
-            required
-            autoComplete="name"
-            placeholder="Nguyễn Văn An"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className={authFieldClass}
-          />
-        </label>
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-[#44546f]">Email</span>
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            placeholder="ten@congty.vn"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className={authFieldClass}
-          />
-        </label>
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-[#44546f]">Mật khẩu</span>
-          <PasswordField
-            id="password"
-            value={password}
-            onChange={setPassword}
-            autoComplete="new-password"
-            placeholder="Ít nhất 8 ký tự"
-            className={`${authFieldClass} pr-10`}
-          />
-        </label>
-        <label className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-[#44546f]">Xác nhận mật khẩu</span>
-          <PasswordField
-            id="confirm-password"
-            value={confirmPassword}
-            onChange={setConfirmPassword}
-            autoComplete="new-password"
-            placeholder="Nhập lại mật khẩu"
-            className={`${authFieldClass} pr-10`}
-          />
-        </label>
-        <label className="flex items-start gap-2.5 text-sm leading-5 text-[#44546f]">
-          <input
-            type="checkbox"
-            checked={accepted}
-            onChange={(event) => setAccepted(event.target.checked)}
-            className="mt-0.5 size-4 accent-[#0c66e4]"
-          />
-          <span>Tôi đồng ý với Điều khoản dịch vụ và Chính sách quyền riêng tư</span>
-        </label>
-        {error ? (
-          <p className="rounded-lg bg-[#ffedeb] px-3 py-2.5 text-sm text-[#ca3521]">{error}</p>
-        ) : null}
-        <button
-          type="submit"
-          disabled={loading}
-          className="h-11 rounded-lg bg-[#0c66e4] text-sm font-semibold text-white shadow-[0_1px_2px_rgba(9,30,66,0.25)] hover:bg-[#0055cc] disabled:opacity-60"
-        >
-          {loading ? "Đang tạo…" : "Tạo tài khoản"}
-        </button>
-      </form>
+        <section className="w-full rounded-lg border border-[#dfe1e6] bg-white px-8 py-8 shadow-[0_4px_16px_rgba(9,30,66,0.1)]">
+          <header className="mb-5 text-center">
+            <h1 className="text-[23px] font-semibold tracking-tight">Tạo tài khoản</h1>
+            <p className="mt-1 text-[11px] text-[#626f86]">Bắt đầu quản lý công việc cùng nhóm</p>
+          </header>
 
-      <p className="mt-6 text-sm text-[#626f86]">
-        Đã có tài khoản?{" "}
-        <Link href="/" className="font-semibold text-[#0c66e4] hover:text-[#0052cc]">
-          Đăng nhập
-        </Link>
-      </p>
-    </AuthFrame>
+          <form className="flex flex-col gap-3.5" onSubmit={onSubmit}>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold text-[#44546f]">Họ và tên</span>
+              <input
+                required
+                autoComplete="name"
+                placeholder="Nguyễn Văn An"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold text-[#44546f]">Email</span>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="ten@congty.vn"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold text-[#44546f]">Mật khẩu</span>
+              <PasswordField
+                id="password"
+                value={password}
+                onChange={setPassword}
+                autoComplete="new-password"
+                placeholder="Ít nhất 8 ký tự"
+                className={`${inputClass} pr-9`}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold text-[#44546f]">Xác nhận mật khẩu</span>
+              <PasswordField
+                id="confirm-password"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                autoComplete="new-password"
+                placeholder="Nhập lại mật khẩu"
+                className={`${inputClass} pr-9`}
+              />
+            </label>
+            <label className="flex items-start gap-2 text-[11px] leading-4 text-[#44546f]">
+              <input
+                type="checkbox"
+                checked={accepted}
+                onChange={(event) => setAccepted(event.target.checked)}
+                className="mt-0.5 size-3.5 accent-[#0c66e4]"
+              />
+              <span>Tôi đồng ý với Điều khoản dịch vụ và Chính sách quyền riêng tư</span>
+            </label>
+            {error ? (
+              <p className="rounded bg-[#ffedeb] px-2.5 py-2 text-[11px] text-[#ca3521]">{error}</p>
+            ) : null}
+            <button
+              type="submit"
+              disabled={loading}
+              className="h-10 rounded bg-[#0c66e4] text-xs font-semibold text-white hover:bg-[#0055cc] disabled:opacity-60"
+            >
+              {loading ? "Đang tạo…" : "Tạo tài khoản"}
+            </button>
+          </form>
+
+          <div className="mt-4 border-t border-[#dfe1e6] pt-4 text-center text-[11px] text-[#626f86]">
+            Đã có tài khoản?{" "}
+            <Link href="/" className="font-semibold text-[#0052cc] hover:underline">
+              Đăng nhập
+            </Link>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }

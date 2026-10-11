@@ -54,6 +54,11 @@ export class WorkspaceController {
     return this.workspaces.removePerson(request.user, userId);
   }
 
+  @Get('mine')
+  mine(@Req() request: { user: AuthUser }) {
+    return this.workspaces.mine(request.user);
+  }
+
   @Get('invitations/mine')
   myInvitations(@Req() request: { user: AuthUser }) {
     return this.workspaces.myInvitations(request.user);
@@ -62,6 +67,16 @@ export class WorkspaceController {
   @Post('invitations/:invitationId/accept')
   acceptInvitation(@Req() request: { user: AuthUser }, @Param('invitationId') invitationId: string) {
     return this.workspaces.acceptInvitation(request.user, invitationId);
+  }
+
+  @Get(':id/overview')
+  overview(
+    @Req() request: { user: AuthUser },
+    @Param('id') id: string,
+    @Query('period') period?: string,
+    @Query('spaceId') spaceId?: string,
+  ) {
+    return this.workspaces.overview(request.user, id, period, spaceId);
   }
 
   @Get(':id/icon')

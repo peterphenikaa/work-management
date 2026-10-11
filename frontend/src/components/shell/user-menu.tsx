@@ -7,7 +7,15 @@ import { useEffect, useRef, useState } from "react";
 import { api, type AuthUser } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
 
-export function UserMenu({ user }: { user: AuthUser }) {
+export function UserMenu({
+  user,
+  badge,
+  badgeClassName = "bg-[#f3f0ff] text-[#5e4db2]",
+}: {
+  user: AuthUser;
+  badge?: string;
+  badgeClassName?: string;
+}) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -53,8 +61,8 @@ export function UserMenu({ user }: { user: AuthUser }) {
         onClick={() => setOpen((current) => !current)}
         className="flex h-9 items-center gap-2 rounded-md px-1 hover:bg-[#f1f2f4]"
       >
-        <span className="hidden h-[22px] items-center rounded-[3px] bg-[#f3f0ff] px-2 text-[12px] font-semibold whitespace-nowrap text-[#5e4db2] sm:inline-flex">
-          {ROLE_LABEL[user.role]}
+        <span className={`hidden h-[22px] items-center rounded-[3px] px-2 text-[12px] font-semibold whitespace-nowrap sm:inline-flex ${badgeClassName}`}>
+          {badge ?? ROLE_LABEL[user.role]}
         </span>
         <span className="grid size-8 place-items-center rounded-full bg-[#334563] text-[11px] font-semibold text-white">
           {initials(user.name)}

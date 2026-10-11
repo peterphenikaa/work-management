@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { AuthUser } from '../auth/auth.types.js';
+import { buildWorkspaceOverview } from './workspace.overview.js';
 import type { InviteMemberDto } from './dto/invitation.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
@@ -433,6 +434,40 @@ export class WorkspaceService {
     return { ok: true };
   }
 
+  async mine(actor: AuthUser) {
+    const rows = await this.prisma.workspaceMember.findMany({
+      where: {
+        userId: actor.id,
+        status: 'ACTIVE',
+        workspace: { deletedAt: null, status: 'ACTIVE' },
+      },
+      include: { workspace: { include: workspaceInclude } },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return {
+      items: rows.map((row) => ({
+        id: row.workspace.id,
+        name: row.workspace.name,
+        description: row.workspace.description,
+        icon: row.workspace.icon,
+        hasIcon: Boolean(row.workspace.iconMime),
+        role: row.role,
+        memberCount: row.workspace._count.members,
+      })),
+    };
+  }
+
+  async overview(actor: AuthUser, id: string, period?: string, spaceId?: string) {
+    const access = await this.requireMembership(actor, id);
+    return buildWorkspaceOverview(this.prisma, {
+      workspaceId: access.workspace.id,
+      workspaceName: access.workspace.name,
+      role: access.role,
+      period,
+      spaceId,
+    });
+  }
+
   async setIcon(
     actor: AuthUser,
     id: string,
@@ -459,7 +494,7 @@ export class WorkspaceService {
   }
 
   async readIcon(actor: AuthUser, id: string) {
-    this.assertAdmin(actor);
+    await this.requireMembership(actor, id);
     const workspace = await this.prisma.workspace.findFirst({
       where: { id, deletedAt: null },
       select: { iconMime: true, iconFile: { select: { data: true } } },
@@ -593,12 +628,7 @@ export class WorkspaceService {
   }
 
   async members(actor: AuthUser, id: string) {
-    this.assertAdmin(actor);
-    const workspace = await this.prisma.workspace.findFirst({
-      where: { id, deletedAt: null },
-      select: { id: true },
-    });
-    if (!workspace) throw new NotFoundException('Không tìm thấy workspace');
+    await this.requireMembership(actor, id);
 
     const rows = await this.prisma.workspaceMember.findMany({
       where: { workspaceId: id, status: 'ACTIVE' },
@@ -765,6 +795,22 @@ export class WorkspaceService {
     }
     plan.set(ownerId, 'ADMIN');
     return plan;
+  }
+
+  private async requireMembership(actor: AuthUser, workspaceId: string) {
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: workspaceId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!workspace) throw new NotFoundException('Không tìm thấy workspace');
+    if (actor.role === 'ADMIN') return { workspace, role: 'ADMIN' as const };
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: actor.id } },
+    });
+    if (!member || member.status !== 'ACTIVE') {
+      throw new ForbiddenException('Bạn không thuộc workspace này');
+    }
+    return { workspace, role: member.role };
   }
 
   private assertAdmin(actor: AuthUser) {

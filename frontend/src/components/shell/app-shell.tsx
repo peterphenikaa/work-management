@@ -13,16 +13,14 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, Suspense, useContext, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { api, type AuthUser } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
+import { LeaderExperience } from "@/components/leader/leader-shell";
+import { ShellUserContext } from "@/components/shell/shell-user";
 import { UserMenu } from "@/components/shell/user-menu";
 
-const ShellUserContext = createContext<AuthUser | null>(null);
-
-export function useShellUser() {
-  return useContext(ShellUserContext);
-}
+export { useShellUser } from "@/components/shell/shell-user";
 
 const nav = [
   {
@@ -67,7 +65,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function AppShellFrame({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
@@ -81,11 +78,25 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
     return <ShellLoading />;
   }
 
+  return (
+    <ShellUserContext.Provider value={user}>
+      {user.role !== "ADMIN" ? (
+        <LeaderExperience user={user} empty={<ManagementChrome user={user}>{children}</ManagementChrome>}>
+          {children}
+        </LeaderExperience>
+      ) : (
+        <ManagementChrome user={user}>{children}</ManagementChrome>
+      )}
+    </ShellUserContext.Provider>
+  );
+}
+
+function ManagementChrome({ user, children }: { user: AuthUser; children: React.ReactNode }) {
+  const pathname = usePathname();
   const mark = initials(user.name);
 
   return (
-    <ShellUserContext.Provider value={user}>
-      <div className="flex h-dvh flex-col overflow-hidden bg-white text-[#172b4d] print:block print:h-auto print:overflow-visible">
+    <div className="flex h-dvh flex-col overflow-hidden bg-white text-[#172b4d] print:block print:h-auto print:overflow-visible">
         <header className="grid h-16 shrink-0 grid-cols-[1fr_minmax(0,440px)_1fr] items-center border-b border-[#dfe1e6] bg-white px-5 print:hidden">
           <span className="grid size-7 place-items-center justify-self-start rounded-[6px] bg-gradient-to-br from-[#0c66e4] to-[#0747a6] text-sm font-bold text-white">
             W
@@ -178,6 +189,5 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-white print:h-auto print:overflow-visible">{children}</div>
         </div>
       </div>
-    </ShellUserContext.Provider>
   );
 }

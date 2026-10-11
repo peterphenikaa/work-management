@@ -704,7 +704,7 @@ function ListView({
   );
 }
 
-function BoardView({
+export function BoardView({
   statuses,
   tasks,
   onCreate,

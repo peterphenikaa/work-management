@@ -16,8 +16,7 @@ export class SpaceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(actor: AuthUser, workspaceId: string) {
-    this.assertAdmin(actor);
-    await this.requireWorkspace(workspaceId);
+    await this.requireMembership(actor, workspaceId);
     const rows = await this.prisma.space.findMany({
       where: { workspaceId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
@@ -44,8 +43,7 @@ export class SpaceService {
   }
 
   async create(actor: AuthUser, workspaceId: string, dto: CreateSpaceDto) {
-    this.assertAdmin(actor);
-    await this.requireWorkspace(workspaceId);
+    await this.requireLeader(actor, workspaceId);
 
     const statuses = dto.statuses.map((name) => name.trim()).filter(Boolean);
     if (statuses.length === 0) {
@@ -190,8 +188,7 @@ export class SpaceService {
   }
 
   async get(actor: AuthUser, workspaceId: string, spaceId: string) {
-    this.assertAdmin(actor);
-    await this.requireWorkspace(workspaceId);
+    await this.requireMembership(actor, workspaceId);
     const row = await this.prisma.space.findFirst({
       where: { id: spaceId, workspaceId, deletedAt: null },
       include: {
@@ -259,7 +256,7 @@ export class SpaceService {
   }
 
   async createList(actor: AuthUser, workspaceId: string, spaceId: string, dto: CreateListDto) {
-    this.assertAdmin(actor);
+    await this.requireLeader(actor, workspaceId);
     await this.requireSpace(workspaceId, spaceId);
     const last = await this.prisma.workList.findFirst({
       where: { spaceId, deletedAt: null },
@@ -336,7 +333,7 @@ export class SpaceService {
   }
 
   async createTask(actor: AuthUser, workspaceId: string, spaceId: string, dto: CreateTaskDto) {
-    this.assertAdmin(actor);
+    await this.requireLeader(actor, workspaceId);
     const space = await this.requireSpace(workspaceId, spaceId);
     await this.requireList(workspaceId, spaceId, dto.listId);
     const statusId = await this.resolveStatus(spaceId, dto.statusId);
@@ -380,7 +377,7 @@ export class SpaceService {
     taskId: string,
     dto: UpdateTaskDto,
   ) {
-    this.assertAdmin(actor);
+    await this.requireLeader(actor, workspaceId);
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, spaceId, deletedAt: null, space: { workspaceId, deletedAt: null } },
     });
@@ -492,6 +489,28 @@ export class SpaceService {
       if (!eligible) {
         throw new BadRequestException('Space riêng tư cần ít nhất một Trưởng nhóm hoặc Thành viên');
       }
+    }
+  }
+
+  private async requireLeader(actor: AuthUser, workspaceId: string) {
+    await this.requireWorkspace(workspaceId);
+    if (actor.role === 'ADMIN') return;
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: actor.id } },
+    });
+    if (!member || member.status !== 'ACTIVE' || (member.role !== 'LEADER' && member.role !== 'ADMIN')) {
+      throw new ForbiddenException('Chỉ trưởng nhóm mới thay đổi được nội dung này');
+    }
+  }
+
+  private async requireMembership(actor: AuthUser, workspaceId: string) {
+    await this.requireWorkspace(workspaceId);
+    if (actor.role === "ADMIN") return;
+    const member = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: actor.id } },
+    });
+    if (!member || member.status !== "ACTIVE") {
+      throw new ForbiddenException("Bạn không thuộc workspace này");
     }
   }
 
