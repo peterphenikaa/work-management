@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Link2, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
+import { Check, Link2, Paperclip, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useShellUser } from "@/components/shell/shell-user";
@@ -14,12 +14,7 @@ const PRIORITY_LABEL: Record<Priority, string> = {
   MEDIUM: "Trung bình",
   LOW: "Thấp",
 };
-const PRIORITY_TONE: Record<Priority, string> = {
-  URGENT: "bg-[#ffeceb] text-[#ae2e24]",
-  HIGH: "bg-[#fff3eb] text-[#c25100]",
-  MEDIUM: "bg-[#fff7d6] text-[#7f5f01]",
-  LOW: "bg-[#f1f2f4] text-[#44546f]",
-};
+const MAX_PENDING_BYTES = 5 * 1024 * 1024;
 export type TaskDraft = {
   id: string;
   listId: string;
@@ -32,6 +27,9 @@ export type TaskDraft = {
   reporterId: string;
   reporterName: string;
   dueAt: string | null;
+  startAt?: string | null;
+  storyPoints?: number | null;
+  completedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -71,14 +69,15 @@ export function TaskDialog({
   onSaved: () => void;
 }) {
   const creating = task === null;
-  const locked = memberMode && !creating;
-  const canChangeStatus = !memberMode || creating || task !== null;
   const reviewStatus = statuses.find((status) => /review|đánh giá/i.test(status.name));
   const titleRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const shellUser = useShellUser();
   const actorId = currentUserId || shellUser?.id || "";
   const actorName = shellUser?.name ?? "";
+  // Mở task có sẵn: xem trước; bấm bút mới vào form sửa. Tạo mới luôn ở chế độ sửa.
+  const [editing, setEditing] = useState(creating);
   const [freshMembers, setFreshMembers] = useState<{ userId: string; name: string }[] | null>(null);
   const roster = useMemo(() => {
     const source = (freshMembers ?? members).map((person) => ({ userId: person.userId, name: person.name }));
@@ -104,19 +103,57 @@ export function TaskDialog({
   const [priority, setPriority] = useState<Priority>(task?.priority ?? "MEDIUM");
   const [assigneeId, setAssigneeId] = useState(task?.assigneeId ?? "");
   const [reporterId, setReporterId] = useState(task?.reporterId || fallbackReporter);
-  const [dueAt, setDueAt] = useState(task?.dueAt ? task.dueAt.slice(0, 10) : "");
+  const [dueAt, setDueAt] = useState(task?.dueAt ? toLocalDateTime(task.dueAt) : "");
+  const [startAt, setStartAt] = useState(task?.startAt ? toLocalDateTime(task.startAt) : "");
+  const [storyPoints, setStoryPoints] = useState(task?.storyPoints != null ? String(task.storyPoints) : "");
   const [checks, setChecks] = useState<CheckItem[]>([]);
   const [checkDraft, setCheckDraft] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const ready = title.trim().length > 0 && listId && statusId && reporterId && !saving;
-  const statusName = statuses.find((status) => status.id === statusId)?.name ?? "Trạng thái";
+  const locked = memberMode ? !creating : !creating && !editing;
+  const canChangeStatus = memberMode ? !creating : creating || editing;
+  const showEditChrome = creating || editing;
+  const canDelete = !creating && !memberMode && Boolean(task);
+
+  const ready = title.trim().length > 0 && Boolean(spaceId) && listId && statusId && reporterId && !saving;
   const listName = lists.find((list) => list.id === listId)?.name ?? "List";
   const reporterName = roster.find((member) => member.userId === reporterId)?.name ?? task?.reporterName ?? "—";
   const doneCount = checks.filter((item) => item.done).length;
   const progress = checks.length === 0 ? 0 : Math.round((doneCount / checks.length) * 100);
+
+  function resetFromTask() {
+    if (!task) return;
+    setTitle(task.title);
+    setDescription(task.description ?? "");
+    setListId(task.listId || presetListId || lists[0]?.id || "");
+    setStatusId(task.statusId);
+    setPriority(task.priority);
+    setAssigneeId(task.assigneeId ?? "");
+    setReporterId(task.reporterId || fallbackReporter);
+    setDueAt(task.dueAt ? toLocalDateTime(task.dueAt) : "");
+    setStartAt(task.startAt ? toLocalDateTime(task.startAt) : "");
+    setStoryPoints(task.storyPoints != null ? String(task.storyPoints) : "");
+    setError("");
+  }
+
+  function enterEdit() {
+    if (memberMode || creating) return;
+    setEditing(true);
+    window.setTimeout(() => titleRef.current?.focus(), 0);
+  }
+
+  function cancelEdit() {
+    if (creating) {
+      requestClose();
+      return;
+    }
+    resetFromTask();
+    setEditing(false);
+  }
 
   useEffect(() => {
     if (memberMode) return;
@@ -210,10 +247,41 @@ export function TaskDialog({
     }
   }
 
-  // M05.09: cảnh báo khi đóng form tạo công việc đang nhập dở.
+  // M05.09: cảnh báo khi đóng form tạo / sửa đang nhập dở.
   function requestClose() {
-    if (creating && (title.trim() || description.trim()) && !window.confirm("Dữ liệu chưa lưu sẽ bị mất. Bạn vẫn muốn đóng?")) return;
+    const dirtyCreate =
+      creating &&
+      (title.trim() || description.trim() || pendingFiles.length > 0 || checks.length > 0 || startAt || storyPoints.trim());
+    const dirtyEdit =
+      !creating &&
+      editing &&
+      task &&
+      (title.trim() !== task.title ||
+        (description.trim() || "") !== (task.description ?? "") ||
+        listId !== task.listId ||
+        statusId !== task.statusId ||
+        priority !== task.priority ||
+        (assigneeId || "") !== (task.assigneeId ?? "") ||
+        reporterId !== task.reporterId ||
+        dueAt !== (task.dueAt ? toLocalDateTime(task.dueAt) : "") ||
+        startAt !== (task.startAt ? toLocalDateTime(task.startAt) : "") ||
+        storyPoints !== (task.storyPoints != null ? String(task.storyPoints) : ""));
+    if ((dirtyCreate || dirtyEdit) && !window.confirm("Dữ liệu chưa lưu sẽ bị mất. Bạn vẫn muốn đóng?")) return;
     onClose();
+  }
+
+  async function removeTask() {
+    if (!task || memberMode) return;
+    if (!window.confirm(`Xóa công việc ${task.code}? Thao tác không thể hoàn tác.`)) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await api.delete(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}`);
+      onSaved();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không xóa được công việc");
+      setDeleting(false);
+    }
   }
 
   async function copyText(value: string, label: string) {
@@ -226,8 +294,26 @@ export function TaskDialog({
     }
   }
 
+  function addPendingFile(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_PENDING_BYTES) {
+      setError("Tệp tối đa 5 MB");
+      return;
+    }
+    setError("");
+    setPendingFiles((current) => [...current, file]);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
   async function save(nextStatusId?: string) {
     if (!ready) return;
+    if (dueAt) {
+      const due = new Date(dueAt);
+      if (Number.isNaN(due.getTime()) || due.getTime() <= Date.now()) {
+        setError("Hạn chót phải là thời điểm trong tương lai");
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     if (memberMode && task) {
@@ -243,6 +329,11 @@ export function TaskDialog({
       }
       return;
     }
+    const points = storyPoints.trim() === "" ? null : Number(storyPoints);
+    if (points != null && (!Number.isFinite(points) || points < 0)) {
+      setError("Story points phải là số không âm");
+      return;
+    }
     const payload = {
       listId,
       title: title.trim(),
@@ -251,14 +342,22 @@ export function TaskDialog({
       priority,
       assigneeId: assigneeId || null,
       reporterId,
-      dueAt: dueAt ? `${dueAt}T12:00:00.000Z` : null,
+      dueAt: dueAt ? new Date(dueAt).toISOString() : null,
+      startAt: startAt ? new Date(startAt).toISOString() : null,
+      storyPoints: points,
     };
     try {
       if (creating) {
         const response = await api.post<{ id: string }>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks`, payload);
+        const taskId = response.data.id;
         for (const item of checks) {
-          const created = await api.post<CheckItem>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${response.data.id}/checks`, { title: item.title });
-          if (item.done) await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${response.data.id}/checks/${created.data.id}`, { done: true });
+          const created = await api.post<CheckItem>(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${taskId}/checks`, { title: item.title });
+          if (item.done) await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${taskId}/checks/${created.data.id}`, { done: true });
+        }
+        for (const file of pendingFiles) {
+          const body = new FormData();
+          body.append("file", file);
+          await api.post(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${taskId}/attachments`, body, { timeout: 60000 });
         }
       } else {
         await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}`, payload);
@@ -287,20 +386,29 @@ export function TaskDialog({
           <span className="min-w-0 truncate text-[13px] font-semibold text-[#172b4d]">{listName}</span>
           <span className="ml-auto flex items-center gap-1">
             {copied ? <span className="mr-1 text-[12px] font-semibold text-[#216e4e]">{copied}</span> : null}
-            <IconButton label="Sao chép liên kết" onClick={() => void copyText(`${task?.code ?? "Công việc"} · ${title || "Chưa đặt tên"}`, "Đã sao chép")}>
-              <Link2 size={15} />
-            </IconButton>
-            <IconButton
-              label="Chia sẻ"
-              onClick={() => void copyText(`${creating ? "Công việc mới" : task.code}: ${title || "Chưa đặt tên"} — ${workspaceName} / ${spaceName} / ${listName}`, "Đã sao chép nội dung chia sẻ")}
-            >
-              <Share2 size={15} />
-            </IconButton>
-            {locked ? null : (
-              <IconButton label="Sửa tiêu đề" onClick={() => titleRef.current?.focus()}>
-                <Pencil size={15} />
-              </IconButton>
-            )}
+            {!creating ? (
+              <>
+                <IconButton label="Sao chép liên kết" onClick={() => void copyText(`${task?.code ?? "Công việc"} · ${title || "Chưa đặt tên"}`, "Đã sao chép")}>
+                  <Link2 size={15} />
+                </IconButton>
+                <IconButton
+                  label="Chia sẻ"
+                  onClick={() => void copyText(`${task?.code ?? "Công việc"}: ${title || "Chưa đặt tên"} — ${workspaceName} / ${spaceName} / ${listName}`, "Đã sao chép nội dung chia sẻ")}
+                >
+                  <Share2 size={15} />
+                </IconButton>
+                {!memberMode && !editing ? (
+                  <IconButton label="Chỉnh sửa" onClick={enterEdit}>
+                    <Pencil size={15} />
+                  </IconButton>
+                ) : null}
+                {canDelete ? (
+                  <IconButton label="Xóa công việc" onClick={() => void removeTask()} disabled={deleting || saving}>
+                    <Trash2 size={15} />
+                  </IconButton>
+                ) : null}
+              </>
+            ) : null}
             <IconButton label="Đóng" onClick={requestClose}>
               <X size={16} />
             </IconButton>
@@ -309,44 +417,18 @@ export function TaskDialog({
 
         <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_312px]">
           <div className="min-h-0 min-w-0 overflow-y-auto px-6 py-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                aria-label="Trạng thái"
-                value={statusId}
-                disabled={!canChangeStatus}
-                onChange={(event) => setStatusId(event.target.value)}
-                className={`h-7 rounded-full px-3 text-[11px] font-bold outline-none ${statusTone(statusName)}`}
-              >
-                {statuses.map((status) => (
-                  <option key={status.id} value={status.id}>
-                    {status.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Mức độ ưu tiên"
-                value={priority}
-                disabled={locked}
-                onChange={(event) => setPriority(event.target.value as Priority)}
-                className={`h-7 rounded-full px-3 text-[11px] font-bold outline-none ${PRIORITY_TONE[priority]}`}
-              >
-                {PRIORITIES.map((item) => (
-                  <option key={item} value={item}>
-                    {PRIORITY_LABEL[item]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <input
-              ref={titleRef}
-              id={titleId}
-              value={title}
-              readOnly={locked}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Tên công việc"
-              className="mt-3 w-full border-0 bg-transparent text-[26px] leading-tight font-semibold text-[#172b4d] outline-none placeholder:text-[#172b4d]/35"
-            />
+            <label className="block">
+              <span className="text-[12px] font-bold text-[#44546f]">Tên công việc *</span>
+              <input
+                ref={titleRef}
+                id={titleId}
+                value={title}
+                readOnly={locked}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Nhập tên công việc"
+                className="mt-1.5 w-full border-0 bg-transparent text-[26px] leading-tight font-semibold text-[#172b4d] outline-none placeholder:text-[#172b4d]/35"
+              />
+            </label>
             <p className="mt-1.5 text-[12px] text-[#626f86]">
               Tạo bởi <span className="font-semibold text-[#44546f]">{reporterName}</span>
               {task?.createdAt ? ` lúc ${formatWhen(task.createdAt)}` : creating ? "" : ""}
@@ -379,18 +461,21 @@ export function TaskDialog({
                     <button
                       type="button"
                       aria-label={item.done ? "Đánh dấu chưa xong" : "Đánh dấu đã xong"}
+                      disabled={locked && !memberMode}
                       onClick={() => void toggleCheck(item)}
-                      className={`grid size-4 shrink-0 place-items-center rounded-[3px] border ${item.done ? "border-[#0c66e4] bg-[#0c66e4] text-white" : "border-[#b3b9c4] bg-white"}`}
+                      className={`grid size-4 shrink-0 place-items-center rounded-[3px] border ${item.done ? "border-[#0c66e4] bg-[#0c66e4] text-white" : "border-[#b3b9c4] bg-white"} disabled:opacity-55`}
                     >
                       {item.done ? <Check size={11} strokeWidth={3} /> : null}
                     </button>
                     <input
                       value={item.title}
+                      readOnly={locked && !memberMode}
                       onChange={(event) => setChecks((current) => current.map((row) => (row.id === item.id ? { ...row, title: event.target.value } : row)))}
                       onBlur={(event) => void renameCheck(item, event.target.value)}
                       className={`min-w-0 flex-1 border-0 bg-transparent text-[13px] outline-none ${item.done ? "text-[#626f86] line-through" : "text-[#172b4d]"}`}
                     />
-                    <button
+                    {locked && !memberMode ? null : (
+                      <button
                         type="button"
                         aria-label="Xóa mục"
                         onClick={() => void removeCheck(item)}
@@ -398,26 +483,73 @@ export function TaskDialog({
                       >
                         <Trash2 size={13} />
                       </button>
+                    )}
                   </li>
                 ))}
               </ul>
               {checks.length === 0 ? <p className="mt-3 text-[12px] text-[#626f86]">Chưa có mục checklist.</p> : null}
-              <form
-                className="mt-2 flex items-center gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  addCheck();
-                }}
-              >
-                <Plus size={14} className="text-[#626f86]" />
-                <input
-                  value={checkDraft}
-                  onChange={(event) => setCheckDraft(event.target.value)}
-                  placeholder="Thêm mục checklist"
-                  className="h-8 min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#172b4d] outline-none placeholder:text-[#a5adba]"
-                />
-              </form>
+              {locked && !memberMode ? null : (
+                <form
+                  className="mt-2 flex items-center gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    addCheck();
+                  }}
+                >
+                  <Plus size={14} className="text-[#626f86]" />
+                  <input
+                    value={checkDraft}
+                    onChange={(event) => setCheckDraft(event.target.value)}
+                    placeholder="Thêm mục checklist"
+                    className="h-8 min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#172b4d] outline-none placeholder:text-[#a5adba]"
+                  />
+                </form>
+              )}
             </Section>
+
+            {creating ? (
+              <Section
+                label="Tệp đính kèm"
+                extra={
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="inline-flex h-7 items-center gap-1.5 rounded border border-[#dfe1e6] bg-white px-2.5 text-[12px] font-semibold text-[#44546f] hover:bg-[#f7f8f9]"
+                  >
+                    <Paperclip size={13} />
+                    Thêm tệp
+                  </button>
+                }
+              >
+                <input
+                  ref={fileRef}
+                  type="file"
+                  aria-label="Chọn tệp đính kèm"
+                  className="hidden"
+                  onChange={(event) => addPendingFile(event.target.files?.[0])}
+                />
+                {pendingFiles.length === 0 ? (
+                  <p className="text-[12px] text-[#626f86]">Chưa chọn tệp (tối đa 5 MB mỗi tệp). Tệp sẽ được tải lên sau khi tạo công việc.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {pendingFiles.map((file, index) => (
+                      <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-md border border-[#eef0f3] bg-[#fafbfc] px-2.5 py-1.5">
+                        <Paperclip size={14} className="shrink-0 text-[#626f86]" />
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#172b4d]">{file.name}</span>
+                        <button
+                          type="button"
+                          aria-label={`Gỡ ${file.name}`}
+                          onClick={() => setPendingFiles((current) => current.filter((_, row) => row !== index))}
+                          className="grid size-7 place-items-center rounded text-[#626f86] hover:bg-white hover:text-[#ae2e24]"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
+            ) : null}
 
             {task ? (
               <TaskActivity
@@ -431,7 +563,7 @@ export function TaskDialog({
               />
             ) : (
               <Section label="Hoạt động">
-                <p className="text-[12px] text-[#626f86]">Lưu công việc để thêm bình luận và tệp đính kèm.</p>
+                <p className="text-[12px] text-[#626f86]">Lưu công việc để thêm bình luận.</p>
               </Section>
             )}
           </div>
@@ -440,7 +572,7 @@ export function TaskDialog({
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
             <p className="mb-4 text-[11px] font-bold tracking-[0.08em] text-[#7a869a]">THÔNG TIN</p>
             <div className="flex flex-col gap-3">
-              <Property label="Space">
+              <Property label="Space *">
                 <div className="flex h-9 items-center rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] font-medium text-[#172b4d]">{spaceName}</div>
               </Property>
               <Property label="List">
@@ -456,19 +588,41 @@ export function TaskDialog({
                 <Select disabled={locked} value={assigneeId} onChange={setAssigneeId} options={[{ id: "", label: "Chưa giao" }, ...roster.filter((member) => !memberMode || member.userId === actorId || member.userId === task?.assigneeId).map((member) => ({ id: member.userId, label: member.name }))]} />
               </Property>
               <Property label="Người giao">
-                <Select disabled={memberMode} value={reporterId} onChange={setReporterId} options={reporterOptions} />
+                <Select disabled={locked || memberMode} value={reporterId} onChange={setReporterId} options={reporterOptions} />
+              </Property>
+              <Property label="Ngày bắt đầu">
+                <input
+                  type="datetime-local"
+                  value={startAt}
+                  disabled={locked}
+                  onChange={(event) => setStartAt(event.target.value)}
+                  className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] text-[#172b4d] outline-none disabled:bg-[#f7f8f9] disabled:text-[#626f86]"
+                />
               </Property>
               <Property label="Hạn chót">
                 <input
-                  type="date"
+                  type="datetime-local"
                   value={dueAt}
                   disabled={locked}
+                  min={toLocalDateTime(new Date(Date.now() + 60_000).toISOString())}
                   onChange={(event) => setDueAt(event.target.value)}
-                  className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] text-[#172b4d] outline-none"
+                  className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] text-[#172b4d] outline-none disabled:bg-[#f7f8f9] disabled:text-[#626f86]"
+                />
+              </Property>
+              <Property label="Story points">
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={storyPoints}
+                  disabled={locked}
+                  placeholder="Tuỳ chọn"
+                  onChange={(event) => setStoryPoints(event.target.value)}
+                  className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white px-2.5 text-[13px] text-[#172b4d] outline-none disabled:bg-[#f7f8f9] disabled:text-[#626f86]"
                 />
               </Property>
             </div>
-            {memberMode && canChangeStatus && reviewStatus && statusId !== reviewStatus.id ? (
+            {memberMode && reviewStatus && statusId !== reviewStatus.id ? (
               <button
                 type="button"
                 disabled={saving}
@@ -478,21 +632,37 @@ export function TaskDialog({
                 Gửi để đánh giá
               </button>
             ) : null}
-            {error ? <p className="mt-3 text-[12px] text-[#ae2e24]">{error}</p> : null}
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t border-[#dfe1e6] px-4 py-3">
-              <button type="button" onClick={requestClose} className="h-[34px] rounded bg-[#f1f2f4] px-3 text-[13px] font-semibold text-[#44546f] hover:bg-[#e4e6ea]">
-                Hủy
-              </button>
+            {memberMode && statusId !== task?.statusId ? (
               <button
                 type="button"
-                disabled={!ready}
+                disabled={saving}
                 onClick={() => void save()}
-                className="h-[34px] rounded bg-[#0c66e4] px-3 text-[13px] font-semibold text-white hover:bg-[#0055cc] disabled:opacity-55"
+                className="mt-3 h-9 w-full rounded-md bg-[#0c66e4] text-[13px] font-semibold text-white hover:bg-[#0055cc] disabled:opacity-55"
               >
-                {creating ? "Tạo công việc" : "Lưu thay đổi"}
+                Cập nhật trạng thái
               </button>
+            ) : null}
+            {error ? <p className="mt-3 text-[12px] text-[#ae2e24]">{error}</p> : null}
             </div>
+            {showEditChrome ? (
+              <div className="flex items-center justify-end gap-2 border-t border-[#dfe1e6] px-4 py-3">
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="h-[34px] rounded bg-[#f1f2f4] px-3 text-[13px] font-semibold text-[#44546f] hover:bg-[#e4e6ea]"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  disabled={!ready}
+                  onClick={() => void save()}
+                  className="h-[34px] rounded bg-[#0c66e4] px-3 text-[13px] font-semibold text-white hover:bg-[#0055cc] disabled:opacity-55"
+                >
+                  {creating ? "Tạo công việc" : "Lưu thay đổi"}
+                </button>
+              </div>
+            ) : null}
           </aside>
         </div>
       </div>
@@ -559,23 +729,41 @@ function Select({
   );
 }
 
-function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+function IconButton({
+  label,
+  onClick,
+  children,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  disabled?: boolean;
+}) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={onClick} className="grid size-8 place-items-center rounded text-[#626f86] hover:bg-[#f1f2f4] hover:text-[#172b4d]">
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="grid size-8 place-items-center rounded text-[#626f86] hover:bg-[#f1f2f4] hover:text-[#172b4d] disabled:opacity-45 disabled:hover:bg-transparent"
+    >
       {children}
     </button>
   );
-}
-
-function statusTone(name: string) {
-  if (/hoàn/i.test(name)) return "bg-[#dcfff1] text-[#216e4e]";
-  if (/đang|review/i.test(name)) return "bg-[#e9f2ff] text-[#0c66e4]";
-  return "bg-[#f1f2f4] text-[#44546f]";
 }
 
 function formatWhen(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
+function toLocalDateTime(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 

@@ -93,10 +93,7 @@ export function WorkspaceScreen() {
     <section className="flex min-h-0 flex-1 flex-col px-8 pt-8 pb-8">
       <div className="flex items-start justify-between gap-6">
         <div>
-          <p className="text-[13px] text-[#626f86]">
-            Quản trị <span className="px-1 text-[#c7cdd6]">/</span> Workspaces
-          </p>
-          <h1 className="mt-2 text-[24px] leading-8 font-semibold text-[#172b4d]">Quản lý Workspace</h1>
+          <h1 className="text-[24px] leading-8 font-semibold text-[#172b4d]">Workspace</h1>
           <p className="mt-1 text-[13px] text-[#626f86]">
             Tạo, sửa, xóa và kiểm tra cấu trúc các không gian làm việc của tổ chức.
           </p>
@@ -150,9 +147,11 @@ export function WorkspaceScreen() {
               <span className="text-[13px] text-[#44546f]">{item.memberCount} thành viên</span>
               <span className="flex items-center gap-2 text-[13px] text-[#172b4d]">
                 <span
-                  className={`size-2 rounded-full ${item.status === "ACTIVE" ? "bg-[#22a06b]" : "bg-[#8590a2]"}`}
+                  className={`size-2 rounded-full ${
+                    item.status === "ACTIVE" ? "bg-[#22a06b]" : item.status === "PAUSED" ? "bg-[#e2b203]" : "bg-[#8590a2]"
+                  }`}
                 />
-                {item.status === "ACTIVE" ? "Đang hoạt động" : "Đã lưu trữ"}
+                {item.status === "ACTIVE" ? "Đang hoạt động" : item.status === "PAUSED" ? "Tạm dừng" : "Lưu trữ"}
               </span>
               <span className="flex items-center justify-end gap-2">
                 <button

@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import type { AuthUser } from '../auth/auth.types.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { CreateSpaceDto } from './dto/create-space.dto.js';
 import { UpdateSpaceDto } from './dto/update-space.dto.js';
 import { CreateListDto, UpdateListDto } from './dto/list.dto.js';
-import { CreateTaskDto, UpdateSpaceSettingsDto, UpdateTaskDto } from './dto/task.dto.js';
+import { BulkUpdateTasksDto, CreateTaskDto, UpdateSpaceSettingsDto, UpdateTaskDto } from './dto/task.dto.js';
 import { SpaceService } from './space.service.js';
 
 @Controller('workspaces/:workspaceId/spaces')
@@ -72,6 +72,16 @@ export class SpaceController {
     return this.spaces.createTask(request.user, workspaceId, spaceId, dto);
   }
 
+  @Post(':spaceId/tasks/bulk')
+  bulkUpdateTasks(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+    @Body() dto: BulkUpdateTasksDto,
+  ) {
+    return this.spaces.bulkUpdateTasks(request.user, workspaceId, spaceId, dto);
+  }
+
   @Patch(':spaceId/tasks/:taskId')
   updateTask(
     @Req() request: { user: AuthUser },
@@ -83,6 +93,16 @@ export class SpaceController {
     return this.spaces.updateTask(request.user, workspaceId, spaceId, taskId, dto);
   }
 
+  @Delete(':spaceId/tasks/:taskId')
+  removeTask(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+    @Param('taskId') taskId: string,
+  ) {
+    return this.spaces.removeTask(request.user, workspaceId, spaceId, taskId);
+  }
+
   @Patch(':spaceId')
   update(
     @Req() request: { user: AuthUser },
@@ -91,6 +111,33 @@ export class SpaceController {
     @Body() dto: UpdateSpaceDto,
   ) {
     return this.spaces.update(request.user, workspaceId, spaceId, dto);
+  }
+
+  @Post(':spaceId/archive')
+  archive(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+  ) {
+    return this.spaces.archive(request.user, workspaceId, spaceId);
+  }
+
+  @Post(':spaceId/restore')
+  restore(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+  ) {
+    return this.spaces.restore(request.user, workspaceId, spaceId);
+  }
+
+  @Delete(':spaceId')
+  remove(
+    @Req() request: { user: AuthUser },
+    @Param('workspaceId') workspaceId: string,
+    @Param('spaceId') spaceId: string,
+  ) {
+    return this.spaces.remove(request.user, workspaceId, spaceId);
   }
 
   @Post()

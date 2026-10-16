@@ -21,6 +21,7 @@ import { CreateWorkspaceDto } from './dto/create-workspace.dto.js';
 import { DeleteWorkspaceDto } from './dto/delete-workspace.dto.js';
 import { InviteMemberDto, UpdateInvitationDto } from './dto/invitation.dto.js';
 import { ListWorkspacesQuery } from './dto/list-workspaces.query.js';
+import { UpdateMemberDto } from './dto/update-member.dto.js';
 import { UpdatePersonDto } from './dto/update-person.dto.js';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto.js';
 import { WorkspaceService } from './workspace.service.js';
@@ -69,6 +70,11 @@ export class WorkspaceController {
     return this.workspaces.acceptInvitation(request.user, invitationId);
   }
 
+  @Post('invitations/:invitationId/reject')
+  rejectInvitation(@Req() request: { user: AuthUser }, @Param('invitationId') invitationId: string) {
+    return this.workspaces.rejectInvitation(request.user, invitationId);
+  }
+
   @Get(':id/overview')
   overview(
     @Req() request: { user: AuthUser },
@@ -113,6 +119,25 @@ export class WorkspaceController {
   @Get(':id/members')
   members(@Req() request: { user: AuthUser }, @Param('id') id: string) {
     return this.workspaces.members(request.user, id);
+  }
+
+  @Patch(':id/members/:userId')
+  updateMember(
+    @Req() request: { user: AuthUser },
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateMemberDto,
+  ) {
+    return this.workspaces.updateMember(request.user, id, userId, dto.role);
+  }
+
+  @Delete(':id/members/:userId')
+  removeMember(
+    @Req() request: { user: AuthUser },
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.workspaces.removeMember(request.user, id, userId);
   }
 
   @Get(':id/invitations')

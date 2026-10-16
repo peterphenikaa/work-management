@@ -5,6 +5,7 @@ import { api, type Role } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
 
 type AccessType = "PRIVATE" | "PUBLIC";
+type WorkspaceLifecycle = "ACTIVE" | "PAUSED" | "ARCHIVED";
 
 export type WorkspaceItem = {
   id: string;
@@ -18,7 +19,16 @@ export type WorkspaceItem = {
   updatedAt: string;
   memberCount: number;
   accessType: AccessType;
-  status: "ACTIVE" | "ARCHIVED";
+  status: WorkspaceLifecycle;
+  spaceCount?: number;
+  listCount?: number;
+  taskCount?: number;
+};
+
+const WORKSPACE_STATUS_LABEL: Record<WorkspaceLifecycle, string> = {
+  ACTIVE: "Đang hoạt động",
+  PAUSED: "Tạm dừng",
+  ARCHIVED: "Lưu trữ",
 };
 
 type Person = {
@@ -104,6 +114,7 @@ function WorkspaceEditor({
   const [description, setDescription] = useState(item?.description ?? "");
   const [ownerId, setOwnerId] = useState(item?.ownerId ?? defaultOwnerId ?? "");
   const [accessType, setAccessType] = useState<AccessType>(item?.accessType ?? "PRIVATE");
+  const [status, setStatus] = useState<WorkspaceLifecycle>(item?.status ?? "ACTIVE");
   const [members, setMembers] = useState<DraftMember[]>([]);
   const [invites, setInvites] = useState<DraftInvite[]>([]);
   const [email, setEmail] = useState("");
@@ -169,7 +180,8 @@ function WorkspaceEditor({
   }, [item]);
 
   const mark = (item?.icon?.trim() || (name.trim() ? initials(name) : "WS")).slice(0, 4);
-  const createReady = name.trim().length > 0 && description.trim().length > 0 && ownerId.length > 0;
+  const createReady = name.trim().length > 0 && ownerId.length > 0;
+  const ownerPerson = people.find((row) => row.id === ownerId);
 
   function pickIcon(file: File | undefined) {
     if (!file) return;
@@ -194,8 +206,12 @@ function WorkspaceEditor({
       return;
     }
     const person = people.find((row) => row.email.toLowerCase() === needle);
+    if (!person) {
+      setError("Không tìm thấy người dùng");
+      return;
+    }
     const owner = people.find((row) => row.id === ownerId);
-    if (person?.id === ownerId || owner?.email.toLowerCase() === needle || members.some((row) => row.email.toLowerCase() === needle)) {
+    if (person.id === ownerId || owner?.email.toLowerCase() === needle || members.some((row) => row.email.toLowerCase() === needle)) {
       setError("Người này đã có trong workspace");
       return;
     }
@@ -224,7 +240,7 @@ function WorkspaceEditor({
     }
     setInvites((current) => [
       ...current,
-      { email: needle, name: person?.name ?? null, role: "MEMBER" },
+      { email: needle, name: person.name, role: "MEMBER" },
     ]);
     setEmail("");
     setError("");
@@ -286,9 +302,10 @@ function WorkspaceEditor({
       if (mode === "edit" && item) {
         const patched = await api.patch<{ updatedAt: string }>(`/workspaces/${item.id}`, {
           name: name.trim(),
-          description: description.trim(),
+          description: description.trim() || null,
           accessType,
           ownerId,
+          status,
           updatedAt,
           members: members.map((row) => ({
             userId: row.userId,
@@ -299,9 +316,10 @@ function WorkspaceEditor({
       } else {
         const created = await api.post<{ id: string }>("/workspaces", {
           name: name.trim(),
-          description: description.trim(),
+          ...(description.trim() ? { description: description.trim() } : {}),
           ownerId,
           accessType,
+          status,
           ...(invites.length
             ? { invites: invites.map((row) => ({ email: row.email, role: row.role })) }
             : {}),
@@ -387,7 +405,7 @@ function WorkspaceEditor({
           </div>
 
           <div className="grid grid-cols-2 gap-x-[14px] gap-y-[14px]">
-            <Field label={isCreate ? "Tên Workspace *" : "Tên Workspace"}>
+            <Field label="Tên Workspace *">
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -397,21 +415,27 @@ function WorkspaceEditor({
                 autoFocus
               />
             </Field>
-            <Field label={isCreate ? "Chủ sở hữu / Quản trị viên *" : "Chủ sở hữu / Quản trị viên"}>
-              <Select
-                value={ownerId}
-                onChange={(event) => changeOwner(event.target.value)}
-                disabled={!ready}
-              >
-                {people.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.name}
-                  </option>
-                ))}
-              </Select>
+            <Field label="Chủ sở hữu / Quản trị viên *">
+              {isCreate ? (
+                <div className={`${inputClass} flex items-center bg-[#f7f8f9] text-[#44546f]`}>
+                  {ownerPerson?.name ?? "Người tạo workspace"}
+                </div>
+              ) : (
+                <Select
+                  value={ownerId}
+                  onChange={(event) => changeOwner(event.target.value)}
+                  disabled={!ready}
+                >
+                  {people.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </Field>
             <div className="col-span-2">
-              <Field label={isCreate ? "Mô tả Workspace *" : "Mô tả Workspace"}>
+              <Field label="Mô tả Workspace">
                 <textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
@@ -421,19 +445,26 @@ function WorkspaceEditor({
                 />
               </Field>
             </div>
-            <div className="col-span-2">
-              <Field label={isCreate ? "Quyền riêng tư / Chế độ truy cập *" : "Quyền riêng tư / Chế độ truy cập"}>
-                <Select value={accessType} onChange={(event) => setAccessType(event.target.value as AccessType)}>
-                  <option value="PRIVATE">Riêng tư — Chỉ thành viên được mời</option>
-                  <option value="PUBLIC">Công khai — Mọi người trong tổ chức</option>
-                </Select>
-                <span className="text-[12px] leading-4 font-normal text-[#626f86]">
-                  {accessType === "PRIVATE"
-                    ? "Người dùng cần được mời để truy cập Workspace."
-                    : "Mọi người trong tổ chức có thể truy cập Workspace."}
-                </span>
-              </Field>
-            </div>
+            <Field label="Quyền riêng tư / Chế độ truy cập *">
+              <Select value={accessType} onChange={(event) => setAccessType(event.target.value as AccessType)}>
+                <option value="PRIVATE">Riêng tư — Chỉ thành viên được mời</option>
+                <option value="PUBLIC">Công khai — Mọi người trong tổ chức</option>
+              </Select>
+              <span className="text-[12px] leading-4 font-normal text-[#626f86]">
+                {accessType === "PRIVATE"
+                  ? "Người dùng cần được mời để truy cập Workspace."
+                  : "Mọi người trong tổ chức có thể truy cập Workspace."}
+              </span>
+            </Field>
+            <Field label="Trạng thái Workspace *">
+              <Select value={status} onChange={(event) => setStatus(event.target.value as WorkspaceLifecycle)}>
+                {(Object.keys(WORKSPACE_STATUS_LABEL) as WorkspaceLifecycle[]).map((key) => (
+                  <option key={key} value={key}>
+                    {WORKSPACE_STATUS_LABEL[key]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           </div>
 
           <div className="border-t border-[#dfe1e6] pt-4">
@@ -599,7 +630,26 @@ export function DeleteWorkspaceDialog({
   const [confirmName, setConfirmName] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [spaceCount, setSpaceCount] = useState(item.spaceCount ?? 0);
+  const [listCount, setListCount] = useState(item.listCount ?? 0);
+  const [taskCount, setTaskCount] = useState(item.taskCount ?? 0);
   const matched = confirmName.trim() === item.name.trim();
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<WorkspaceItem>(`/workspaces/${item.id}`)
+      .then((response) => {
+        if (cancelled) return;
+        setSpaceCount(response.data.spaceCount ?? 0);
+        setListCount(response.data.listCount ?? 0);
+        setTaskCount(response.data.taskCount ?? 0);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [item.id]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -645,8 +695,8 @@ export function DeleteWorkspaceDialog({
             <p className="text-[13px] font-bold text-[#172b4d]">Dữ liệu sẽ bị xóa</p>
             <div className="mt-[11px] grid grid-cols-3 gap-2">
               <Stat icon="/workspace/users.svg" label={`${item.memberCount} thành viên`} />
-              <Stat icon="/workspace/list.svg" label="0 Space / List" />
-              <Stat icon="/workspace/check.svg" label="0 công việc tham chiếu" />
+              <Stat icon="/workspace/list.svg" label={`${spaceCount} Space / ${listCount} List`} />
+              <Stat icon="/workspace/check.svg" label={`${taskCount} công việc`} />
             </div>
           </div>
           <p className="rounded-[5px] bg-[#ffedeb] p-2.5 text-[13px] leading-[18px] text-[#ca3521]">

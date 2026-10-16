@@ -5,18 +5,23 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
+  Copy,
   FolderKanban,
   ListTodo,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { ListDialog } from "@/components/spaces/list-dialog";
-import TaskDialog from "@/components/spaces/task-detail";
+import TaskDialog, { type TaskDraft } from "@/components/spaces/task-detail";
 import { MemberCreateTaskDialog, MemberTaskDialog } from "@/components/member/member-task-dialog";
 import { useShellUser } from "@/components/shell/shell-user";
 import { CreateSpaceDialog, spaceIcon, spaceSwatch, type SpaceColor, type SpaceIcon } from "@/components/workspaces/space-dialog";
+import type { MemberSprint } from "@/components/member/member-data";
 
 type SpaceItem = {
   id: string;
@@ -29,15 +34,9 @@ type SpaceItem = {
   memberCount: number;
 };
 
-type TaskItem = {
-  id: string;
-  listId: string;
-  code: string;
-  title: string;
-  statusId: string | null;
-  priority: string;
+type TaskItem = TaskDraft & {
   assigneeName: string | null;
-  dueAt: string | null;
+  statusId: string;
 };
 
 type ListItem = {
@@ -127,8 +126,10 @@ export function LeaderProjects({
   const [memberCreating, setMemberCreating] = useState(false);
   const [creatingList, setCreatingList] = useState(false);
   const [pickingList, setPickingList] = useState(false);
-  const [editor, setEditor] = useState<{ listId: string } | null>(null);
+  const [editor, setEditor] = useState<{ listId: string; taskId?: string } | null>(null);
   const [viewingId, setViewingId] = useState("");
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [sprints, setSprints] = useState<MemberSprint[]>([]);
   const loadedFor = useRef("");
   const seenSpace = useRef("");
   const focusList = useRef<string | null>(null);
@@ -146,12 +147,15 @@ export function LeaderProjects({
       setListId("");
     }
     setError("");
-    api
-      .get<{ items: SpaceItem[] }>(`/workspaces/${workspaceId}/spaces`)
-      .then((response) => {
+    Promise.all([
+      api.get<{ items: SpaceItem[] }>(`/workspaces/${workspaceId}/spaces`),
+      api.get<{ items: MemberSprint[] }>(`/workspaces/${workspaceId}/sprints`).catch(() => ({ data: { items: [] as MemberSprint[] } })),
+    ])
+      .then(([response, sprintRes]) => {
         if (cancelled) return;
         const items = response.data.items ?? [];
         setSpaces(items);
+        setSprints(sprintRes.data.items ?? []);
         setSpaceId((current) => (current && items.some((item) => item.id === current) ? current : items[0]?.id || ""));
         setOpen((current) => {
           const next = { ...current };
@@ -270,6 +274,40 @@ export function LeaderProjects({
   }, [detail, listId, tasks]);
 
   const activeList = detail?.lists.find((list) => list.id === listId) ?? null;
+  const activeSprint = useMemo(() => {
+    if (!spaceId) return null;
+    return sprints.find((sprint) => sprint.spaceId === spaceId && sprint.status === "ACTIVE") ?? null;
+  }, [sprints, spaceId]);
+
+  function openExisting(task: TaskItem) {
+    if (readOnly) {
+      setViewingId(task.id);
+      return;
+    }
+    setEditor({ listId: task.listId, taskId: task.id });
+  }
+
+  async function deleteTask(task: TaskItem) {
+    if (!detail || !window.confirm(`Xóa ${task.code}?`)) return;
+    try {
+      await api.delete(`/workspaces/${workspaceId}/spaces/${detail.id}/tasks/${task.id}`);
+      setMenuId(null);
+      refresh();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không xóa được công việc");
+    }
+  }
+
+  async function copyTaskLink(task: TaskItem) {
+    try {
+      await navigator.clipboard.writeText(`${task.code} · ${task.title}`);
+    } catch {
+      // ignore
+    }
+    setMenuId(null);
+  }
+
+  const openTask = editor?.taskId && detail ? (detail.tasks.find((task) => task.id === editor.taskId) ?? null) : null;
 
   return (
     <div className="flex h-full min-h-[720px] flex-col bg-white">
@@ -540,12 +578,26 @@ export function LeaderProjects({
                 </button>
               </div>
             ) : null}
-            {groups.map(({ list, tasks: rows }) => (
+            {groups.map(({ list, tasks: rows }) => {
+              const sprintPct =
+                activeSprint && activeSprint.total > 0
+                  ? Math.round((activeSprint.done / activeSprint.total) * 100)
+                  : null;
+              return (
               <div key={list.id} className="border-b border-[#dfe1e6]">
                 <div className="flex h-10 items-center gap-2 bg-[#f7f8f9] px-5">
                   <ListTodo className="size-3.5 text-[#44546f]" />
                   <span className="text-[13px] font-semibold text-[#172b4d]">{list.name}</span>
                   <span className="text-[12px] text-[#626f86]">{rows.length}</span>
+                  {activeSprint && sprintPct != null ? (
+                    <span className="ml-auto flex items-center gap-2 text-[11px] text-[#626f86]">
+                      <span className="truncate font-medium text-[#44546f]">{activeSprint.name}</span>
+                      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-[#ebecf0]">
+                        <span className="block h-full rounded-full bg-[#0c66e4]" style={{ width: `${sprintPct}%` }} />
+                      </span>
+                      <span>{sprintPct}%</span>
+                    </span>
+                  ) : null}
                 </div>
                 {rows.length === 0 ? (
                   <p className="px-5 py-3 text-[13px] text-[#7a869a]">Chưa có công việc.</p>
@@ -558,6 +610,7 @@ export function LeaderProjects({
                       <col className="w-[140px]" />
                       <col className="w-[120px]" />
                       <col className="w-[96px]" />
+                      <col className="w-10" />
                     </colgroup>
                     <thead>
                       <tr className="h-9 border-b border-[#dfe1e6] text-[11px] font-semibold tracking-wide text-[#626f86] uppercase">
@@ -566,7 +619,10 @@ export function LeaderProjects({
                         <th className="w-[160px] px-2 font-semibold">Người thực hiện</th>
                         <th className="w-[140px] px-2 font-semibold">Trạng thái</th>
                         <th className="w-[120px] px-2 font-semibold">Ưu tiên</th>
-                        <th className="w-[96px] px-5 font-semibold">Hạn</th>
+                        <th className="w-[96px] px-2 font-semibold">Hạn</th>
+                        <th className="w-10 px-2 font-semibold">
+                          <span className="sr-only">Thao tác</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -576,18 +632,14 @@ export function LeaderProjects({
                         return (
                           <tr
                             key={task.id}
-                            onClick={readOnly ? () => setViewingId(task.id) : undefined}
-                            className={`h-11 border-b border-[#f1f2f4] text-[13px] text-[#172b4d] hover:bg-[#f7f8f9] ${readOnly ? "cursor-pointer" : ""}`}
+                            onClick={() => openExisting(task)}
+                            className="group h-11 cursor-pointer border-b border-[#f1f2f4] text-[13px] text-[#172b4d] hover:bg-[#f7f8f9]"
                           >
                             <td className="px-5 font-medium text-[#626f86]">{task.code}</td>
                             <td className="px-2">
-                              {readOnly ? (
-                                <button type="button" onClick={() => setViewingId(task.id)} className="line-clamp-1 text-left hover:text-[#0c66e4]">
-                                  {task.title}
-                                </button>
-                              ) : (
-                                <span className="line-clamp-1">{task.title}</span>
-                              )}
+                              <button type="button" onClick={(event) => { event.stopPropagation(); openExisting(task); }} className="line-clamp-1 text-left hover:text-[#0c66e4]">
+                                {task.title}
+                              </button>
                             </td>
                             <td className="px-2">
                               {task.assigneeName ? (
@@ -610,7 +662,34 @@ export function LeaderProjects({
                                 {priority.label}
                               </span>
                             </td>
-                            <td className="px-5 text-[#44546f]">{formatDue(task.dueAt)}</td>
+                            <td className="px-2 text-[#44546f]">{formatDue(task.dueAt)}</td>
+                            <td className="relative px-2" onClick={(event) => event.stopPropagation()}>
+                              {readOnly ? null : (
+                                <>
+                                  <button
+                                    type="button"
+                                    aria-label={`Thao tác ${task.code}`}
+                                    onClick={() => setMenuId((current) => (current === task.id ? null : task.id))}
+                                    className="grid size-7 place-items-center rounded text-[#626f86] opacity-0 group-hover:opacity-100 hover:bg-white"
+                                  >
+                                    <MoreHorizontal className="size-3.5" />
+                                  </button>
+                                  {menuId === task.id ? (
+                                    <div className="absolute top-8 right-2 z-20 w-40 rounded-md border border-[#dfe1e6] bg-white p-1 shadow-[0_8px_24px_rgba(9,30,66,0.16)]">
+                                      <button type="button" onClick={() => { setMenuId(null); openExisting(task); }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover:bg-[#f7f8f9]">
+                                        <Pencil className="size-3.5" /> Sửa
+                                      </button>
+                                      <button type="button" onClick={() => void copyTaskLink(task)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover:bg-[#f7f8f9]">
+                                        <Copy className="size-3.5" /> Sao chép
+                                      </button>
+                                      <button type="button" onClick={() => void deleteTask(task)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-[#ae2e24] hover:bg-[#fff5f4]">
+                                        <Trash2 className="size-3.5" /> Xóa
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -618,7 +697,8 @@ export function LeaderProjects({
                   </table>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       </div>
@@ -654,7 +734,7 @@ export function LeaderProjects({
       ) : null}
       {editor && detail ? (
         <TaskDialog
-          key={`new-${editor.listId}`}
+          key={editor.taskId ?? `new-${editor.listId}`}
           workspaceId={workspaceId}
           spaceId={detail.id}
           workspaceName={detail.workspaceName || workspaceName}
@@ -662,7 +742,7 @@ export function LeaderProjects({
           lists={detail.lists}
           statuses={detail.statuses}
           members={detail.members ?? []}
-          task={null}
+          task={openTask}
           presetListId={editor.listId}
           currentUserId={user?.id ?? ""}
           onClose={() => setEditor(null)}

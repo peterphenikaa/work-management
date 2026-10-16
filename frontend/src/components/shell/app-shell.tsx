@@ -4,7 +4,6 @@ import {
   Building2,
   ChartColumn,
   CircleUser,
-  Ellipsis,
   LayoutGrid,
   Settings,
   Users,
@@ -13,7 +12,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { api, type AuthUser } from "@/lib/api";
-import { ROLE_LABEL, initials } from "@/lib/roles";
 import { LeaderExperience } from "@/components/leader/leader-shell";
 import { ShellUserContext } from "@/components/shell/shell-user";
 import { NotificationBell } from "@/components/shell/notification-bell";
@@ -93,7 +91,6 @@ function AppShellFrame({ children }: { children: React.ReactNode }) {
 
 function ManagementChrome({ user, children }: { user: AuthUser; children: React.ReactNode }) {
   const pathname = usePathname();
-  const mark = initials(user.name);
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-white text-[#172b4d] print:block print:h-auto print:overflow-visible">
@@ -112,7 +109,7 @@ function ManagementChrome({ user, children }: { user: AuthUser; children: React.
 
         <div className="flex min-h-0 flex-1 print:block">
           <aside className="flex w-[244px] shrink-0 flex-col overflow-hidden border-r border-[#dfe1e6] bg-[#f7f8f9] print:hidden">
-            <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pt-5">
+            <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pt-5 pb-4">
               {nav.map((group, index) => (
                 <div
                   key={group.label}
@@ -152,24 +149,6 @@ function ManagementChrome({ user, children }: { user: AuthUser; children: React.
                 </div>
               ))}
             </nav>
-
-            <Link
-              href="/profile"
-              className="flex shrink-0 items-center gap-2.5 border-t border-[#dfe1e6] px-4 py-4 hover:bg-[#f1f2f4]"
-            >
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#334563] text-[11px] font-semibold text-white">
-                {mark}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-semibold text-[#172b4d]">
-                  {user.name}
-                </span>
-                <span className="block truncate text-[11px] text-[#626f86]">
-                  {ROLE_LABEL[user.role]}
-                </span>
-              </span>
-              <Ellipsis size={16} className="shrink-0 text-[#626f86]" />
-            </Link>
           </aside>
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-white print:h-auto print:overflow-visible">{children}</div>

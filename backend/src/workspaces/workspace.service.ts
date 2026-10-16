@@ -75,15 +75,12 @@ export class WorkspaceService {
 
   async create(actor: AuthUser, dto: CreateWorkspaceDto) {
     this.assertAdmin(actor);
-    const owner = await this.prisma.user.findUnique({
-      where: { id: dto.ownerId },
-      select: { id: true },
-    });
-    if (!owner) throw new BadRequestException('Chủ sở hữu không tồn tại');
+    // Chủ sở hữu luôn là người tạo, không nhận ownerId từ client.
+    const ownerId = actor.id;
 
     const extras = new Map<string, 'ADMIN' | 'LEADER' | 'MEMBER'>();
     for (const member of dto.initialMembers ?? []) {
-      if (member.userId === dto.ownerId) continue;
+      if (member.userId === ownerId) continue;
       if (extras.has(member.userId)) {
         throw new BadRequestException('Danh sách thành viên ban đầu bị trùng');
       }
@@ -107,10 +104,11 @@ export class WorkspaceService {
           description: dto.description,
           icon: dto.icon,
           accessType: dto.accessType,
-          ownerId: dto.ownerId,
+          status: dto.status ?? 'ACTIVE',
+          ownerId,
           members: {
             create: [
-              { userId: dto.ownerId, role: 'ADMIN', status: 'ACTIVE' },
+              { userId: ownerId, role: 'ADMIN', status: 'ACTIVE' },
               ...[...extras.entries()].map(([userId, role]) => ({
                 userId,
                 role,
@@ -136,7 +134,7 @@ export class WorkspaceService {
       if (dto.invites?.length) {
         await this.writeInvites(tx, {
           workspaceId: workspace.id,
-          ownerId: dto.ownerId,
+          ownerId,
           actorId: actor.id,
           invites: dto.invites,
         });
@@ -270,11 +268,32 @@ export class WorkspaceService {
       throw new BadRequestException('Tên xác nhận không khớp');
     }
 
+    const now = new Date();
     await this.prisma.$transaction(async (tx) => {
+      const spaces = await tx.space.findMany({
+        where: { workspaceId: id, deletedAt: null },
+        select: { id: true },
+      });
+      const spaceIds = spaces.map((space) => space.id);
+
       await tx.workspace.update({
         where: { id },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: now },
       });
+      if (spaceIds.length > 0) {
+        await tx.space.updateMany({
+          where: { id: { in: spaceIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+        await tx.workList.updateMany({
+          where: { spaceId: { in: spaceIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+        await tx.task.updateMany({
+          where: { spaceId: { in: spaceIds }, deletedAt: null },
+          data: { deletedAt: now },
+        });
+      }
       await tx.auditLog.create({
         data: {
           actorId: actor.id,
@@ -282,7 +301,7 @@ export class WorkspaceService {
           targetType: 'WORKSPACE',
           targetId: id,
           result: 'SUCCESS',
-          metadata: { name: current.name },
+          metadata: { name: current.name, spaces: spaceIds.length },
         },
       });
     });
@@ -434,6 +453,31 @@ export class WorkspaceService {
     return { ok: true };
   }
 
+  async rejectInvitation(actor: AuthUser, invitationId: string) {
+    const current = await this.prisma.invitation.findUnique({ where: { id: invitationId } });
+    if (!current || current.email.toLowerCase() !== actor.email.toLowerCase()) {
+      throw new NotFoundException('Không tìm thấy lời mời');
+    }
+    if (current.status !== 'PENDING') {
+      throw new BadRequestException('Lời mời không còn hiệu lực');
+    }
+    await this.prisma.invitation.update({
+      where: { id: current.id },
+      data: { status: 'REJECTED' },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: 'INVITATION_REJECT',
+        targetType: 'INVITATION',
+        targetId: current.id,
+        result: 'SUCCESS',
+        metadata: { workspaceId: current.workspaceId },
+      },
+    });
+    return { ok: true };
+  }
+
   async mine(actor: AuthUser) {
     const rows = await this.prisma.workspaceMember.findMany({
       where: {
@@ -515,7 +559,16 @@ export class WorkspaceService {
       include: workspaceInclude,
     });
     if (!row) throw new NotFoundException('Không tìm thấy workspace');
-    return this.toItem(row);
+    const [spaceCount, listCount, taskCount] = await Promise.all([
+      this.prisma.space.count({ where: { workspaceId: id, deletedAt: null } }),
+      this.prisma.workList.count({
+        where: { deletedAt: null, space: { workspaceId: id, deletedAt: null } },
+      }),
+      this.prisma.task.count({
+        where: { deletedAt: null, space: { workspaceId: id, deletedAt: null } },
+      }),
+    ]);
+    return { ...this.toItem(row), spaceCount, listCount, taskCount };
   }
 
   async activity(actor: AuthUser, id: string) {
@@ -636,20 +689,119 @@ export class WorkspaceService {
       throw new ForbiddenException('Thành viên không xem được danh sách thành viên workspace');
     }
 
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id, deletedAt: null },
+      select: { ownerId: true },
+    });
+    if (!workspace) throw new NotFoundException('Không tìm thấy workspace');
+
     const rows = await this.prisma.workspaceMember.findMany({
       where: { workspaceId: id, status: 'ACTIVE' },
-      include: { user: { select: { name: true, email: true } } },
+      include: { user: { select: { name: true, email: true, locked: true } } },
       orderBy: { joinedAt: 'asc' },
     });
 
     return {
+      ownerId: workspace.ownerId,
       items: rows.map((row) => ({
         userId: row.userId,
         name: row.user.name,
         email: row.user.email,
         role: row.role,
+        locked: row.user.locked,
+        isOwner: row.userId === workspace.ownerId,
       })),
     };
+  }
+
+  async updateMember(actor: AuthUser, workspaceId: string, userId: string, role: WorkspaceRole) {
+    this.assertAdmin(actor);
+    await this.requireWritableWorkspace(workspaceId);
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: workspaceId, deletedAt: null },
+      select: { ownerId: true },
+    });
+    if (!workspace) throw new NotFoundException('Không tìm thấy workspace');
+    if (userId === workspace.ownerId && role !== 'ADMIN') {
+      throw new BadRequestException('Chủ sở hữu workspace phải giữ vai trò Quản trị viên');
+    }
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    if (!membership || membership.status !== 'ACTIVE') {
+      throw new NotFoundException('Không tìm thấy thành viên trong workspace');
+    }
+    const updated = await this.prisma.workspaceMember.update({
+      where: { id: membership.id },
+      data: { role },
+      include: { user: { select: { name: true, email: true, locked: true } } },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: 'MEMBER_ROLE_UPDATE',
+        targetType: 'WORKSPACE_MEMBER',
+        targetId: membership.id,
+        result: 'SUCCESS',
+        metadata: { workspaceId, userId, role },
+      },
+    });
+    return {
+      userId: updated.userId,
+      name: updated.user.name,
+      email: updated.user.email,
+      role: updated.role,
+      locked: updated.user.locked,
+      isOwner: updated.userId === workspace.ownerId,
+    };
+  }
+
+  async removeMember(actor: AuthUser, workspaceId: string, userId: string) {
+    this.assertAdmin(actor);
+    await this.requireWritableWorkspace(workspaceId);
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id: workspaceId, deletedAt: null },
+      select: { ownerId: true },
+    });
+    if (!workspace) throw new NotFoundException('Không tìm thấy workspace');
+    if (userId === workspace.ownerId) {
+      throw new BadRequestException('Không thể gỡ chủ sở hữu khỏi workspace');
+    }
+    const membership = await this.prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+    });
+    if (!membership || membership.status !== 'ACTIVE') {
+      throw new NotFoundException('Không tìm thấy thành viên trong workspace');
+    }
+    await this.prisma.workspaceMember.update({
+      where: { id: membership.id },
+      data: { status: 'REMOVED' },
+    });
+    await this.prisma.spaceMember.deleteMany({
+      where: { userId, space: { workspaceId, deletedAt: null } },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: 'MEMBER_REMOVE',
+        targetType: 'WORKSPACE_MEMBER',
+        targetId: membership.id,
+        result: 'SUCCESS',
+        metadata: { workspaceId, userId },
+      },
+    });
+    return { ok: true };
+  }
+
+  private async requireWritableWorkspace(id: string) {
+    const workspace = await this.prisma.workspace.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, status: true },
+    });
+    if (!workspace) throw new NotFoundException('Không tìm thấy workspace');
+    if (workspace.status === 'ARCHIVED') {
+      throw new BadRequestException('Workspace đã lưu trữ, không thể chỉnh sửa nội dung');
+    }
   }
 
   private async writeInvites(
@@ -699,20 +851,19 @@ export class WorkspaceService {
       where: { email: { equals: input.email, mode: 'insensitive' } },
       select: { id: true, name: true },
     });
-    if (user) {
-      const membership = await db.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId: input.workspaceId, userId: user.id } },
-      });
-      if (membership?.status === 'ACTIVE') {
-        throw new ConflictException('Người này đã là thành viên');
-      }
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+    const membership = await db.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId: input.workspaceId, userId: user.id } },
+    });
+    if (membership?.status === 'ACTIVE') {
+      throw new ConflictException('Người này đã là thành viên');
     }
 
     const pending = await db.invitation.findFirst({
       where: { workspaceId: input.workspaceId, email: input.email, status: 'PENDING' },
     });
     if (pending && pending.expiresAt > new Date()) {
-      return this.toInvite(pending, user?.name ?? null);
+      return this.toInvite(pending, user.name);
     }
     if (pending) {
       await db.invitation.update({ where: { id: pending.id }, data: { status: 'EXPIRED' } });
@@ -739,7 +890,7 @@ export class WorkspaceService {
         metadata: { email: created.email, workspaceId: input.workspaceId, role: created.role },
       },
     });
-    return this.toInvite(created, user?.name ?? null);
+    return this.toInvite(created, user.name);
   }
 
   private async requireWorkspace(id: string) {

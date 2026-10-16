@@ -70,7 +70,7 @@ export function LeaderSprints({ workspaceId, workspaceName, onChanged }: { works
         <div>
           <p className="text-[12px] text-[#626f86]">Workspace {workspaceName} / Sprint</p>
           <h1 className="mt-1 text-[28px] leading-9 font-semibold tracking-[-0.02em] text-[#172b4d]">Quản lý Sprint</h1>
-          <p className="mt-1 text-[13px] text-[#626f86]">Mỗi Space có tối đa một Sprint đang chạy. Khi đóng Sprint, task chưa hoàn thành quay về backlog.</p>
+          <p className="mt-1 text-[13px] text-[#626f86]">Mỗi Space có tối đa một Sprint đang chạy. Khi hoàn thành Sprint, task chưa xong quay về backlog.</p>
         </div>
         <button type="button" onClick={() => setCreating(true)} className="inline-flex h-9 items-center gap-1.5 rounded-[6px] bg-[#0c66e4] px-3 text-[13px] font-semibold text-white hover:bg-[#0055cc]">
           <Plus size={15} />
@@ -126,12 +126,12 @@ export function LeaderSprints({ workspaceId, workspaceName, onChanged }: { works
                   type="button"
                   disabled={busy === sprint.id}
                   onClick={() => {
-                    if (window.confirm(`Đóng "${sprint.name}"? Task chưa hoàn thành sẽ quay về backlog.`)) void run(sprint.id, () => api.post(`/workspaces/${workspaceId}/sprints/${sprint.id}/close`));
+                    if (window.confirm(`Hoàn thành "${sprint.name}"? Task chưa xong sẽ quay về backlog.`)) void run(sprint.id, () => api.post(`/workspaces/${workspaceId}/sprints/${sprint.id}/close`));
                   }}
                   className="inline-flex h-8 items-center gap-1.5 rounded border border-[#dfe1e6] bg-white px-3 text-[12px] font-semibold text-[#ae2e24] hover:bg-[#fff5f4] disabled:opacity-60"
                 >
                   <Square size={13} />
-                  Đóng Sprint
+                  Hoàn thành Sprint
                 </button>
               ) : null}
             </header>

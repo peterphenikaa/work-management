@@ -16,8 +16,8 @@ export class ListWorkspacesQuery {
   ownerId?: string;
 
   @IsOptional()
-  @IsIn(['ACTIVE', 'ARCHIVED'])
-  status?: 'ACTIVE' | 'ARCHIVED';
+  @IsIn(['ACTIVE', 'PAUSED', 'ARCHIVED'])
+  status?: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
 
   @IsOptional()
   @IsIn(['name', 'createdAt', 'memberCount'])

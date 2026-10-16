@@ -4,7 +4,6 @@ import {
   Bell,
   ChartColumn,
   ChevronDown,
-  Ellipsis,
   FolderKanban,
   Inbox,
   LayoutGrid,
@@ -17,7 +16,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { api, type AuthUser } from "@/lib/api";
-import { ROLE_LABEL, initials } from "@/lib/roles";
+import { ROLE_LABEL } from "@/lib/roles";
 import { WorkspaceAvatar } from "@/components/leader/workspace-avatar";
 import { WorkspaceSwitcher } from "@/components/leader/workspace-switcher";
 import { type MineWorkspace } from "@/components/leader/workspace-mark";
@@ -235,7 +234,7 @@ function LeaderChrome({ user, children }: { user: AuthUser; children: React.Reac
             </button>
           </div>
 
-          <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pt-4">
+          <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pt-4 pb-4">
             {nav.map((group, index) => (
               <div key={group.label} className={index === 0 ? "" : "mt-3 border-t border-[#dfe1e6]/70 pt-4"}>
                 <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-[#7a869a] uppercase">
@@ -268,14 +267,6 @@ function LeaderChrome({ user, children }: { user: AuthUser; children: React.Reac
               </div>
             ))}
           </nav>
-
-          <Link href="/profile" className="flex shrink-0 items-center gap-2.5 border-t border-[#dfe1e6] px-4 py-4 hover:bg-[#f1f2f4]">
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#334563] text-[11px] font-semibold text-white">
-              {initials(user.name)}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#172b4d]">{user.name}</span>
-            <Ellipsis size={16} className="shrink-0 text-[#626f86]" />
-          </Link>
         </aside>
 
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-[#f7f8f9]">{children}</div>

@@ -35,6 +35,7 @@ export class TaskActivityService {
   }
 
   async addCheck(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string, dto: CreateCheckDto) {
+    await this.spaces.requireWritableWorkspace(workspaceId);
     await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
     const count = await this.prisma.taskCheckItem.count({ where: { taskId } });
     if (count >= 50) throw new BadRequestException('Checklist tối đa 50 mục');
@@ -52,6 +53,7 @@ export class TaskActivityService {
     checkId: string,
     dto: UpdateCheckDto,
   ) {
+    await this.spaces.requireWritableWorkspace(workspaceId);
     await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
     const current = await this.prisma.taskCheckItem.findFirst({ where: { id: checkId, taskId } });
     if (!current) throw new NotFoundException('Không tìm thấy mục checklist');
@@ -66,6 +68,7 @@ export class TaskActivityService {
   }
 
   async removeCheck(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string, checkId: string) {
+    await this.spaces.requireWritableWorkspace(workspaceId);
     await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
     const current = await this.prisma.taskCheckItem.findFirst({ where: { id: checkId, taskId } });
     if (!current) throw new NotFoundException('Không tìm thấy mục checklist');
@@ -99,6 +102,7 @@ export class TaskActivityService {
   }
 
   async addComment(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string, dto: CreateCommentDto) {
+    await this.spaces.requireWritableWorkspace(workspaceId);
     const { task } = await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
     const mentionIds = await this.mentionable(workspaceId, spaceId, task.space.accessType, dto.mentionIds ?? []);
     const created = await this.prisma.taskComment.create({
@@ -153,6 +157,7 @@ export class TaskActivityService {
   }
 
   async upload(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string, file?: UploadedBlob) {
+    await this.spaces.requireWritableWorkspace(workspaceId);
     const { task } = await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
     if (!file || file.size === 0) throw new BadRequestException('Chưa chọn tệp hoặc tệp rỗng');
     if (file.size > MAX_ATTACHMENT_BYTES) throw new BadRequestException('Tệp tối đa 5 MB');
@@ -208,6 +213,7 @@ export class TaskActivityService {
   }
 
   async removeAttachment(actor: AuthUser, workspaceId: string, spaceId: string, taskId: string, attachmentId: string) {
+    await this.spaces.requireWritableWorkspace(workspaceId);
     const { access } = await this.spaces.requireTaskAccess(actor, workspaceId, spaceId, taskId);
     const row = await this.prisma.taskAttachment.findFirst({ where: { id: attachmentId, taskId } });
     if (!row) throw new NotFoundException('Không tìm thấy tệp đính kèm');

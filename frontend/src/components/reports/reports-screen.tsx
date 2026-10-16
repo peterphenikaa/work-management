@@ -284,25 +284,28 @@ export function ReportsScreen() {
               {report.statusDistribution.length === 0 ? (
                 <p className="mt-8 text-[13px] text-[#626f86]">Chưa có công việc trong khoảng này.</p>
               ) : (
-                <div className="mt-5 flex flex-col gap-3.5">
-                  {report.statusDistribution.map((row) => (
-                    <div key={row.name} className="grid grid-cols-[132px_minmax(0,1fr)_52px] items-center gap-3 text-[13px]">
-                      <span className="flex items-center gap-2 text-[#44546f]">
-                        <span className="size-2 shrink-0 rounded-full" style={{ background: row.color }} />
-                        <span className="truncate">{row.name}</span>
-                      </span>
-                      <span className="h-2 rounded-full bg-[#f1f2f4]">
-                        <span
-                          className="block h-2 rounded-full"
-                          style={{ width: `${Math.max((row.count / maxStatus) * 100, row.count > 0 ? 8 : 0)}%`, background: row.color }}
-                        />
-                      </span>
-                      <span className="text-right font-medium">
-                        {row.count}
-                        <span className="ml-1 text-[11px] font-normal text-[#7a869a]">{row.percent}%</span>
-                      </span>
-                    </div>
-                  ))}
+                <div className="mt-5 flex flex-wrap items-center gap-6">
+                  <StatusDonut rows={report.statusDistribution} total={report.kpis.totalTasks} />
+                  <div className="flex min-w-[200px] flex-1 flex-col gap-3.5">
+                    {report.statusDistribution.map((row) => (
+                      <div key={row.name} className="grid grid-cols-[132px_minmax(0,1fr)_52px] items-center gap-3 text-[13px]">
+                        <span className="flex items-center gap-2 text-[#44546f]">
+                          <span className="size-2 shrink-0 rounded-full" style={{ background: row.color }} />
+                          <span className="truncate">{row.name}</span>
+                        </span>
+                        <span className="h-2 rounded-full bg-[#f1f2f4]">
+                          <span
+                            className="block h-2 rounded-full"
+                            style={{ width: `${Math.max((row.count / maxStatus) * 100, row.count > 0 ? 8 : 0)}%`, background: row.color }}
+                          />
+                        </span>
+                        <span className="text-right font-medium">
+                          {row.count}
+                          <span className="ml-1 text-[11px] font-normal text-[#7a869a]">{row.percent}%</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </article>
@@ -362,8 +365,18 @@ export function ReportsScreen() {
                               <span className="block font-semibold">{row.memberName}</span>
                               <span className="mt-1 block h-1.5 w-28 rounded-full bg-[#f1f2f4]">
                                 <span
-                                  className="block h-1.5 rounded-full bg-[#0c66e4]"
-                                  style={{ width: `${(row.assignedTasks / maxAssigned) * 100}%` }}
+                                  className="block h-1.5 rounded-full"
+                                  style={{
+                                    width: `${(row.assignedTasks / maxAssigned) * 100}%`,
+                                    background:
+                                      row.onTimeRate == null
+                                        ? "#8590a2"
+                                        : row.onTimeRate >= 80
+                                          ? "#22a06b"
+                                          : row.onTimeRate >= 50
+                                            ? "#0c66e4"
+                                            : "#e56910",
+                                  }}
                                 />
                               </span>
                             </span>
@@ -524,6 +537,46 @@ function Kpi({
         <span className="block truncate text-[11px] text-[#7a869a]">{hint}</span>
       </span>
     </article>
+  );
+}
+
+function StatusDonut({ rows, total }: { rows: Report["statusDistribution"]; total: number }) {
+  const size = 132;
+  const stroke = 18;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Biểu đồ phân bổ trạng thái" className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#ebecf0" strokeWidth={stroke} />
+      {rows.map((row) => {
+        const length = total === 0 ? 0 : (row.count / total) * circumference;
+        const dash = `${length} ${circumference - length}`;
+        const el = (
+          <circle
+            key={row.name}
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={row.color}
+            strokeWidth={stroke}
+            strokeDasharray={dash}
+            strokeDashoffset={-offset}
+            strokeLinecap="butt"
+            transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          />
+        );
+        offset += length;
+        return el;
+      })}
+      <text x="50%" y="48%" textAnchor="middle" className="fill-[#172b4d]" fontSize="22" fontWeight="600">
+        {total}
+      </text>
+      <text x="50%" y="62%" textAnchor="middle" className="fill-[#626f86]" fontSize="11">
+        Tổng
+      </text>
+    </svg>
   );
 }
 

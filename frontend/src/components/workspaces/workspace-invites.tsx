@@ -54,6 +54,18 @@ export function WorkspaceInvites({
     }
   }
 
+  async function reject(id: string) {
+    setBusyId(id);
+    setError("");
+    try {
+      await api.post(`/workspaces/invitations/${id}/reject`);
+      setItems((current) => current.filter((item) => item.id !== id));
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không từ chối được lời mời");
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className={inset ? "px-8 pt-8" : "mt-6"}>
       <p className="text-[13px] font-semibold text-[#172b4d]">Lời mời workspace</p>
@@ -74,10 +86,18 @@ export function WorkspaceInvites({
             <button
               type="button"
               disabled={busyId === item.id}
+              onClick={() => void reject(item.id)}
+              className="h-[34px] shrink-0 rounded-[4px] border border-[#dfe1e6] bg-white px-3 text-[13px] font-semibold text-[#44546f] hover:bg-[#f7f8f9] disabled:opacity-55"
+            >
+              Từ chối
+            </button>
+            <button
+              type="button"
+              disabled={busyId === item.id}
               onClick={() => void accept(item.id)}
               className="h-[34px] shrink-0 rounded-[4px] bg-[#0c66e4] px-3 text-[13px] font-semibold text-white disabled:opacity-55"
             >
-              {busyId === item.id ? "Đang tham gia…" : "Tham gia"}
+              {busyId === item.id ? "Đang xử lý…" : "Tham gia"}
             </button>
           </div>
         ))}

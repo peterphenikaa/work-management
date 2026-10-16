@@ -51,6 +51,7 @@ type SpaceDetailData = {
   accessType: "PRIVATE" | "PUBLIC";
   views: SpaceView[];
   workspaceName: string;
+  archivedAt?: string | null;
   statuses: Status[];
   members: Member[];
   lists: WorkList[];
@@ -159,7 +160,10 @@ export function SpaceDetail() {
             );
             try {
               await api.patch(`/workspaces/${params.id}/spaces/${params.spaceId}/tasks/${taskId}`, { statusId: nextStatusId });
-            } catch {
+            } catch (reason: unknown) {
+              const message = reason instanceof Error ? reason.message : "Không đổi được trạng thái";
+              setError(message);
+              window.alert(message);
               setReloadKey((value) => value + 1);
             }
           }}
@@ -190,6 +194,7 @@ function toEditableSpace(space: SpaceDetailData): EditableSpace {
     views: space.views,
     statuses: space.statuses.map((status) => ({ id: status.id, name: status.name })),
     members: space.members.map((member) => ({ userId: member.userId, role: member.role })),
+    archivedAt: space.archivedAt ?? null,
   };
 }
 
@@ -781,13 +786,18 @@ export function BoardView({
                   role="button"
                   tabIndex={0}
                   aria-label={`${task.code} ${task.title}`}
-                  className={`rounded-md border border-[#dfe1e6] bg-white px-2.5 py-2 ${!canMove || canMove(task.id) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                  className={`rounded-md border border-[#dfe1e6] border-l-[3px] bg-white px-2.5 py-2 ${!canMove || canMove(task.id) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                  style={{ borderLeftColor: statusAccent(status.name) }}
                 >
-                  <span className="block text-[11px] font-bold text-[#0c66e4]">{task.code}</span>
+                  <span className="block text-[11px] font-bold" style={{ color: statusAccent(status.name) }}>
+                    {task.code}
+                  </span>
                   <span className="mt-0.5 block text-[13px] font-medium text-[#172b4d]">{task.title}</span>
                   <span className="mt-1 flex items-center justify-between gap-2 text-[11px] text-[#626f86]">
                     <span className="truncate">{task.assigneeName ?? "Chưa giao"}</span>
-                    <span className="shrink-0">{task.dueAt ? formatDue(task.dueAt) : ""}</span>
+                    <span className={`shrink-0 font-semibold ${task.dueAt ? "text-[#44546f]" : "text-[#a5adba]"}`}>
+                      {task.dueAt ? formatDue(task.dueAt) : "Không hạn"}
+                    </span>
                   </span>
                   <span className="mt-1 block text-[11px] font-semibold text-[#44546f]">{PRIORITY_LABEL[task.priority]}</span>
                 </article>
@@ -960,9 +970,17 @@ function isOverdue(space: SpaceDetailData, task: TaskItem) {
 }
 
 function statusTone(name: string) {
-  if (/hoàn/i.test(name)) return "bg-[#dcfff1] text-[#216e4e]";
-  if (/đang|review/i.test(name)) return "bg-[#e9f2ff] text-[#0c66e4]";
+  if (/hoàn|done|xong/i.test(name)) return "bg-[#dcfff1] text-[#216e4e]";
+  if (/review|đánh giá/i.test(name)) return "bg-[#f3f0ff] text-[#5e4db2]";
+  if (/đang|thực hiện/i.test(name)) return "bg-[#e9f2ff] text-[#0c66e4]";
   return "bg-[#f1f2f4] text-[#44546f]";
+}
+
+function statusAccent(name: string) {
+  if (/hoàn|done|xong/i.test(name)) return "#22a06b";
+  if (/review|đánh giá/i.test(name)) return "#6e5dc6";
+  if (/đang|thực hiện/i.test(name)) return "#0c66e4";
+  return "#8590a2";
 }
 
 function formatDue(iso: string) {

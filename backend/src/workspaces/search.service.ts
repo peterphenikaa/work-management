@@ -11,7 +11,7 @@ export class SearchService {
     const needle = raw?.trim() ?? '';
     if (needle.length < 2) return { items: [] };
 
-    const space: Prisma.SpaceWhereInput = { deletedAt: null, workspace: { deletedAt: null } };
+    const space: Prisma.SpaceWhereInput = { deletedAt: null, archivedAt: null, workspace: { deletedAt: null } };
     if (actor.role !== 'ADMIN') {
       const memberships = await this.prisma.workspaceMember.findMany({
         where: { userId: actor.id, status: 'ACTIVE', workspace: { deletedAt: null } },

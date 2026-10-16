@@ -1,5 +1,18 @@
-import { Transform } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export const TASK_PRIORITIES = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
 
@@ -51,6 +64,18 @@ export class CreateTaskDto {
   @Transform(({ value }) => emptyToNull(value))
   @IsDateString()
   dueAt?: string | null;
+
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @IsDateString()
+  startAt?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  storyPoints?: number | null;
 }
 
 export class UpdateTaskDto {
@@ -92,6 +117,39 @@ export class UpdateTaskDto {
   @Transform(({ value }) => emptyToNull(value))
   @IsDateString()
   dueAt?: string | null;
+
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @IsDateString()
+  startAt?: string | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  storyPoints?: number | null;
+
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @IsString()
+  sprintId?: string | null;
+}
+
+export class BulkUpdateTasksDto {
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  taskIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  statusId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @IsString()
+  assigneeId?: string | null;
 
   @IsOptional()
   @Transform(({ value }) => emptyToNull(value))

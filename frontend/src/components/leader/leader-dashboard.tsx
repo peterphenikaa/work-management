@@ -1,9 +1,9 @@
 "use client";
 
-import { CalendarDays, ChartColumn, Check, ChevronDown, Flag, Plus, SquareKanban } from "lucide-react";
+import { CalendarDays, ChartColumn, Check, ChevronDown, Copy, Flag, MoreHorizontal, Pencil, Plus, Search, SquareKanban, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type Role } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
 import { useLeader } from "@/components/leader/leader-shell";
@@ -49,8 +49,30 @@ type Overview = {
     priority: Priority;
     dueAt: string | null;
     assigneeName: string | null;
+    spaceId: string;
     spaceName: string;
   }[];
+};
+
+const BUCKET_LABEL: Record<Bucket, string> = {
+  TODO: "Cần làm",
+  IN_PROGRESS: "Đang làm",
+  REVIEW: "Đánh giá",
+  DONE: "Hoàn thành",
+};
+
+const BUCKET_TONE: Record<Bucket, string> = {
+  TODO: "bg-[#f1f2f4] text-[#44546f]",
+  IN_PROGRESS: "bg-[#e9f2ff] text-[#0c66e4]",
+  REVIEW: "bg-[#f3f0ff] text-[#5e4db2]",
+  DONE: "bg-[#dcfff1] text-[#1f845a]",
+};
+
+const BUCKET_COLOR: Record<Bucket, string> = {
+  TODO: "#8590a2",
+  IN_PROGRESS: "#0c66e4",
+  REVIEW: "#6e5dc6",
+  DONE: "#22a06b",
 };
 
 const PERIODS = [
@@ -175,21 +197,25 @@ export function LeaderDashboard() {
           <p className="mt-1 max-w-[640px] text-[13px] text-[#626f86]">{tabDetail(tab)}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href="/home?tab=sprint"
-            className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#dfe1e6] bg-white px-3 text-[13px] font-semibold text-[#172b4d] hover:bg-[#f7f8f9]"
-          >
-            <CalendarDays size={15} />
-            Quản lý Sprint
-          </Link>
-          <button
-            type="button"
-            onClick={() => setCreatingTask(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-[6px] bg-[#0c66e4] px-3 text-[13px] font-semibold text-white hover:bg-[#0055cc]"
-          >
-            <Plus size={15} />
-            Tạo công việc
-          </button>
+          {tab !== "reports" && tab !== "sprint" ? (
+            <Link
+              href="/home?tab=sprint"
+              className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#dfe1e6] bg-white px-3 text-[13px] font-semibold text-[#172b4d] hover:bg-[#f7f8f9]"
+            >
+              <CalendarDays size={15} />
+              Quản lý Sprint
+            </Link>
+          ) : null}
+          {tab !== "reports" ? (
+            <button
+              type="button"
+              onClick={() => setCreatingTask(true)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-[6px] bg-[#0c66e4] px-3 text-[13px] font-semibold text-white hover:bg-[#0055cc]"
+            >
+              <Plus size={15} />
+              Tạo công việc
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -278,13 +304,33 @@ function TabBody({
       />
     );
   }
-  if (tab === "list") return <TaskTable tasks={overview.tasks} title="Danh sách công việc" onCreate={onCreate} />;
+  if (tab === "list") {
+    return (
+      <TaskTable
+        workspaceId={workspaceId}
+        workspaceName={workspaceName}
+        spaceId={spaceId}
+        members={overview.members}
+        tasks={overview.tasks}
+        title="Danh sách công việc"
+        onCreate={onCreate}
+        onChanged={onChanged}
+      />
+    );
+  }
   if (tab === "backlog") {
     return (
       <TaskTable
+        workspaceId={workspaceId}
+        workspaceName={workspaceName}
+        spaceId={spaceId}
+        members={overview.members}
         tasks={overview.tasks.filter((task) => task.bucket === "TODO")}
         title="Product Backlog"
         empty="Chưa có task ở trạng thái cần làm."
+        backlog
+        onCreate={onCreate}
+        onChanged={onChanged}
       />
     );
   }
@@ -430,6 +476,9 @@ function LeaderBoard({
   const [creatingList, setCreatingList] = useState(false);
   const [picking, setPicking] = useState<string | undefined>();
   const [editor, setEditor] = useState<{ taskId?: string; listId: string; statusId?: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
 
   useEffect(() => {
     if (!spaceId) {
@@ -485,9 +534,22 @@ function LeaderBoard({
       onChanged();
     } catch (reason: unknown) {
       setSpace(previous);
-      setError(reason instanceof Error ? reason.message : "Không đổi được trạng thái");
+      const message = reason instanceof Error ? reason.message : "Không đổi được trạng thái";
+      setError(message);
+      window.alert(message);
     }
   }
+
+  const filteredTasks = useMemo(() => {
+    if (!space) return [];
+    const needle = query.trim().toLocaleLowerCase("vi");
+    return space.tasks.filter((task) => {
+      if (assigneeFilter !== "all" && (task.assigneeId ?? "") !== assigneeFilter) return false;
+      if (priorityFilter !== "all" && task.priority !== priorityFilter) return false;
+      if (!needle) return true;
+      return task.title.toLocaleLowerCase("vi").includes(needle) || task.code.toLocaleLowerCase("vi").includes(needle);
+    });
+  }, [space, query, assigneeFilter, priorityFilter]);
 
   if (!spaceId) {
     return <p className="px-1 text-[13px] text-[#626f86]">Chọn một space trong phạm vi tổng quan để kéo thả trạng thái và thêm công việc.</p>;
@@ -498,7 +560,43 @@ function LeaderBoard({
   const openTask = editor?.taskId ? (space.tasks.find((task) => task.id === editor.taskId) ?? null) : null;
 
   return (
-    <div className="min-w-0 overflow-x-auto rounded-[12px] border border-[#dfe1e6] bg-white">
+    <div className="min-w-0 overflow-hidden rounded-[12px] border border-[#dfe1e6] bg-white">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#eef0f3] px-4 py-2.5">
+        <label className="relative min-w-[200px] flex-1">
+          <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[#626f86]" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Tìm mã hoặc tên…"
+            className="h-8 w-full rounded-md border border-[#dfe1e6] pr-3 pl-8 text-[12px] text-[#172b4d] outline-none"
+          />
+        </label>
+        <select
+          aria-label="Lọc người thực hiện"
+          value={assigneeFilter}
+          onChange={(event) => setAssigneeFilter(event.target.value)}
+          className="h-8 rounded-md border border-[#dfe1e6] bg-white px-2 text-[12px] text-[#172b4d]"
+        >
+          <option value="all">Mọi người</option>
+          {space.members.map((member) => (
+            <option key={member.userId} value={member.userId}>
+              {member.name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Lọc ưu tiên"
+          value={priorityFilter}
+          onChange={(event) => setPriorityFilter(event.target.value)}
+          className="h-8 rounded-md border border-[#dfe1e6] bg-white px-2 text-[12px] text-[#172b4d]"
+        >
+          <option value="all">Mọi ưu tiên</option>
+          <option value="URGENT">Khẩn cấp</option>
+          <option value="HIGH">Cao</option>
+          <option value="MEDIUM">Trung bình</option>
+          <option value="LOW">Thấp</option>
+        </select>
+      </div>
       {error ? <p className="px-4 pt-3 text-[13px] text-[#ca3521]">{error}</p> : null}
       {picking !== undefined && space.lists.length > 1 ? (
         <div className="flex flex-wrap items-center gap-2 border-b border-[#dfe1e6] px-4 py-2">
@@ -521,17 +619,19 @@ function LeaderBoard({
           </button>
         </div>
       ) : null}
-      <BoardView
-        statuses={space.statuses}
-        tasks={space.tasks}
-        onCreate={createTask}
-        onMove={(taskId, statusId) => void moveTask(taskId, statusId)}
-        onOpen={(taskId) => {
-          const task = space.tasks.find((item) => item.id === taskId);
-          if (!task) return;
-          setEditor({ taskId, listId: task.listId });
-        }}
-      />
+      <div className="overflow-x-auto">
+        <BoardView
+          statuses={space.statuses}
+          tasks={filteredTasks}
+          onCreate={createTask}
+          onMove={(taskId, statusId) => void moveTask(taskId, statusId)}
+          onOpen={(taskId) => {
+            const task = space.tasks.find((item) => item.id === taskId);
+            if (!task) return;
+            setEditor({ taskId, listId: task.listId });
+          }}
+        />
+      </div>
       {creatingList ? (
         <ListDialog
           open
@@ -572,33 +672,462 @@ function LeaderBoard({
 }
 
 function TaskTable({
+  workspaceId,
+  workspaceName,
+  spaceId,
+  members,
   tasks,
   title,
   empty = "Chưa có công việc trong phạm vi này.",
+  backlog = false,
   onCreate,
+  onChanged,
 }: {
+  workspaceId: string;
+  workspaceName: string;
+  spaceId: string;
+  members: Overview["members"];
   tasks: Overview["tasks"];
   title: string;
   empty?: string;
+  backlog?: boolean;
   onCreate?: () => void;
+  onChanged: () => void;
 }) {
+  const user = useShellUser();
+  const [query, setQuery] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [quickTitle, setQuickTitle] = useState("");
+  const [spaceMeta, setSpaceMeta] = useState<{
+    id: string;
+    name: string;
+    workspaceName: string;
+    statuses: { id: string; name: string }[];
+    members: { userId: string; name: string }[];
+    lists: { id: string; name: string }[];
+    tasks: (TaskDraft & { assigneeName: string | null })[];
+  } | null>(null);
+  const [editor, setEditor] = useState<{ taskId?: string; listId: string; spaceId: string } | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!spaceId) {
+      setSpaceMeta(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<NonNullable<typeof spaceMeta>>(`/workspaces/${workspaceId}/spaces/${spaceId}`)
+      .then((response) => {
+        if (!cancelled) setSpaceMeta(response.data);
+      })
+      .catch(() => {
+        if (!cancelled) setSpaceMeta(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, spaceId]);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase("vi");
+    return tasks.filter((task) => {
+      if (assigneeFilter === "__none__" && task.assigneeName) return false;
+      if (assigneeFilter !== "all" && assigneeFilter !== "__none__" && task.assigneeName !== assigneeFilter) return false;
+      if (statusFilter !== "all" && task.bucket !== statusFilter) return false;
+      if (!needle) return true;
+      return task.title.toLocaleLowerCase("vi").includes(needle) || task.code.toLocaleLowerCase("vi").includes(needle);
+    });
+  }, [tasks, query, assigneeFilter, statusFilter]);
+
+  const assigneeOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const task of tasks) if (task.assigneeName) names.add(task.assigneeName);
+    return [...names].sort((a, b) => a.localeCompare(b, "vi"));
+  }, [tasks]);
+
+  function toggleAll(checked: boolean) {
+    setSelected(checked ? filtered.map((task) => task.id) : []);
+  }
+
+  function toggleOne(id: string, checked: boolean) {
+    setSelected((current) => (checked ? [...current, id] : current.filter((row) => row !== id)));
+  }
+
+  async function bulkPatch(payload: { statusId?: string; assigneeId?: string | null }) {
+    const rows = filtered.filter((task) => selected.includes(task.id));
+    if (rows.length === 0) return;
+    setBusy(true);
+    setError("");
+    try {
+      const bySpace = new Map<string, string[]>();
+      for (const row of rows) {
+        if (!row.spaceId) continue;
+        const list = bySpace.get(row.spaceId) ?? [];
+        list.push(row.id);
+        bySpace.set(row.spaceId, list);
+      }
+      if (bySpace.size === 0) {
+        setError("Không xác định được space để cập nhật hàng loạt");
+        return;
+      }
+      for (const [targetSpaceId, taskIds] of bySpace) {
+        await api.post(`/workspaces/${workspaceId}/spaces/${targetSpaceId}/tasks/bulk`, { taskIds, ...payload });
+      }
+      setSelected([]);
+      onChanged();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không cập nhật được hàng loạt");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function bulkDelete() {
+    const rows = filtered.filter((task) => selected.includes(task.id));
+    if (rows.length === 0) return;
+    if (!window.confirm(`Xóa ${rows.length} công việc đã chọn?`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await Promise.all(
+        rows.map((task) => api.delete(`/workspaces/${workspaceId}/spaces/${task.spaceId}/tasks/${task.id}`)),
+      );
+      setSelected([]);
+      onChanged();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không xóa được công việc");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openTask(task: Overview["tasks"][number]) {
+    try {
+      const response = await api.get<{
+        id: string;
+        name: string;
+        workspaceName: string;
+        statuses: { id: string; name: string }[];
+        members: { userId: string; name: string }[];
+        lists: { id: string; name: string }[];
+        tasks: (TaskDraft & { assigneeName: string | null })[];
+      }>(`/workspaces/${workspaceId}/spaces/${task.spaceId}`);
+      const found = response.data.tasks.find((row) => row.id === task.id);
+      if (!found) return;
+      setSpaceMeta(response.data);
+      setEditor({ taskId: found.id, listId: found.listId, spaceId: task.spaceId });
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không mở được công việc");
+    }
+  }
+
+  async function assignTask(task: Overview["tasks"][number], assigneeId: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await api.patch(`/workspaces/${workspaceId}/spaces/${task.spaceId}/tasks/${task.id}`, {
+        assigneeId: assigneeId || null,
+      });
+      onChanged();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không giao được việc");
+    } finally {
+      setBusy(false);
+      setMenuId(null);
+    }
+  }
+
+  async function deleteTask(task: Overview["tasks"][number]) {
+    if (!window.confirm(`Xóa ${task.code}?`)) return;
+    setBusy(true);
+    try {
+      await api.delete(`/workspaces/${workspaceId}/spaces/${task.spaceId}/tasks/${task.id}`);
+      onChanged();
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Không xóa được công việc");
+    } finally {
+      setBusy(false);
+      setMenuId(null);
+    }
+  }
+
+  async function copyLink(task: Overview["tasks"][number]) {
+    const url = `${window.location.origin}/workspaces/${workspaceId}/spaces/${task.spaceId}`;
+    try {
+      await navigator.clipboard.writeText(`${task.code} · ${task.title}\n${url}`);
+    } catch {
+      // ignore
+    }
+    setMenuId(null);
+  }
+
+  const openDraft =
+    editor && spaceMeta ? (editor.taskId ? (spaceMeta.tasks.find((task) => task.id === editor.taskId) ?? null) : null) : null;
+
   return (
     <article className="overflow-hidden rounded-[12px] border border-[#dfe1e6] bg-white">
-      <h2 className="border-b border-[#dfe1e6] px-4 py-3 text-[16px] font-semibold">{title}</h2>
-      {tasks.length === 0 ? <p className="px-4 py-8 text-[13px] text-[#626f86]">{empty}</p> : null}
-      {tasks.map((task) => (
-        <div key={task.id} className="grid grid-cols-[88px_minmax(0,1fr)_140px_120px] items-center gap-3 border-b border-[#f1f2f4] px-4 py-3 text-[13px] last:border-b-0">
-          <span className="font-semibold text-[#0c66e4]">{task.code}</span>
-          <span className="truncate font-medium">{task.title}</span>
-          <span className="truncate text-[#626f86]">{task.assigneeName ?? "Chưa giao"}</span>
-          <span className={task.dueAt ? "text-[#626f86]" : "text-[#7a869a]"}>{task.dueAt ? formatDue(task.dueAt) : "Không hạn"}</span>
+      <div className="border-b border-[#dfe1e6] px-4 py-3">
+        <h2 className="text-[16px] font-semibold">{title}</h2>
+        {backlog ? (
+          <p className="mt-1 text-[12px] text-[#626f86]">
+            Backlog hiển thị task cần làm trong phạm vi đang lọc — không phụ thuộc khoảng “Tuần này”.
+          </p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="relative min-w-[200px] flex-1">
+            <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[#626f86]" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm mã hoặc tên…"
+              className="h-8 w-full rounded-md border border-[#dfe1e6] pr-3 pl-8 text-[12px] outline-none"
+            />
+          </label>
+          <select
+            aria-label="Lọc người thực hiện"
+            value={assigneeFilter}
+            onChange={(event) => setAssigneeFilter(event.target.value)}
+            className="h-8 rounded-md border border-[#dfe1e6] bg-white px-2 text-[12px]"
+          >
+            <option value="all">Mọi người</option>
+            <option value="__none__">Chưa giao</option>
+            {assigneeOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Lọc trạng thái"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            className="h-8 rounded-md border border-[#dfe1e6] bg-white px-2 text-[12px]"
+          >
+            <option value="all">Mọi trạng thái</option>
+            {(Object.keys(BUCKET_LABEL) as Bucket[]).map((bucket) => (
+              <option key={bucket} value={bucket}>
+                {BUCKET_LABEL[bucket]}
+              </option>
+            ))}
+          </select>
         </div>
-      ))}
+        {backlog && onCreate ? (
+          <form
+            className="mt-3 flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!quickTitle.trim()) return;
+              onCreate();
+              setQuickTitle("");
+            }}
+          >
+            <input
+              value={quickTitle}
+              onChange={(event) => setQuickTitle(event.target.value)}
+              placeholder="Thêm nhanh vào backlog…"
+              className="h-8 min-w-0 flex-1 rounded-md border border-[#dfe1e6] px-2.5 text-[12px] outline-none"
+            />
+            <button type="submit" className="h-8 rounded-md bg-[#0c66e4] px-3 text-[12px] font-semibold text-white">
+              Thêm
+            </button>
+          </form>
+        ) : null}
+      </div>
+
+      {selected.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#eef0f3] bg-[#f7f8f9] px-4 py-2">
+          <span className="text-[12px] font-semibold text-[#44546f]">Đã chọn {selected.length}</span>
+          <button type="button" disabled={busy} onClick={() => void bulkDelete()} className="h-7 rounded border border-[#dfe1e6] bg-white px-2 text-[12px] font-semibold text-[#ae2e24]">
+            Xóa
+          </button>
+          {spaceMeta ? (
+            <select
+              aria-label="Đổi trạng thái hàng loạt"
+              disabled={busy}
+              defaultValue=""
+              onChange={(event) => {
+                const statusId = event.target.value;
+                if (statusId) void bulkPatch({ statusId });
+                event.target.value = "";
+              }}
+              className="h-7 rounded border border-[#dfe1e6] bg-white px-2 text-[12px]"
+            >
+              <option value="">Đổi trạng thái…</option>
+              {spaceMeta.statuses.map((status) => (
+                <option key={status.id} value={status.id}>
+                  {status.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <select
+            aria-label="Giao việc hàng loạt"
+            disabled={busy}
+            defaultValue=""
+            onChange={(event) => {
+              const assigneeId = event.target.value;
+              if (assigneeId !== "") void bulkPatch({ assigneeId: assigneeId === "__none__" ? null : assigneeId });
+              event.target.value = "";
+            }}
+            className="h-7 rounded border border-[#dfe1e6] bg-white px-2 text-[12px]"
+          >
+            <option value="">Giao cho…</option>
+            <option value="__none__">Chưa giao</option>
+            {members.map((member) => (
+              <option key={member.userId} value={member.userId}>
+                {member.name}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={() => setSelected([])} className="ml-auto text-[12px] text-[#626f86]">
+            Bỏ chọn
+          </button>
+        </div>
+      ) : null}
+
+      {error ? <p className="px-4 pt-2 text-[12px] text-[#ae2e24]">{error}</p> : null}
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-[#eef0f3] text-[11px] font-bold tracking-wide text-[#7a869a]">
+              <th className="w-10 px-3 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Chọn tất cả"
+                  checked={filtered.length > 0 && selected.length === filtered.length}
+                  onChange={(event) => toggleAll(event.target.checked)}
+                />
+              </th>
+              <th className="w-[88px] px-2 py-2 font-bold">MÃ</th>
+              <th className="px-2 py-2 font-bold">TÊN</th>
+              <th className="w-[120px] px-2 py-2 font-bold">STATUS</th>
+              <th className="w-[140px] px-2 py-2 font-bold">NGƯỜI THỰC HIỆN</th>
+              <th className="w-[100px] px-2 py-2 font-bold">HẠN</th>
+              <th className="w-10 px-2 py-2">
+                <span className="sr-only">Thao tác</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-[13px] text-[#626f86]">
+                  {empty}
+                </td>
+              </tr>
+            ) : (
+              filtered.map((task) => (
+                <tr key={task.id} className="group border-b border-[#f1f2f4] text-[13px] last:border-b-0 hover:bg-[#f7f8f9]">
+                  <td className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      aria-label={`Chọn ${task.code}`}
+                      checked={selected.includes(task.id)}
+                      onChange={(event) => toggleOne(task.id, event.target.checked)}
+                    />
+                  </td>
+                  <td className="px-2 py-2.5 font-semibold text-[#0c66e4]">
+                    <button type="button" onClick={() => void openTask(task)} className="text-left hover:underline">
+                      {task.code}
+                    </button>
+                  </td>
+                  <td className="max-w-[240px] truncate px-2 py-2.5 font-medium">
+                    <button type="button" onClick={() => void openTask(task)} className="block w-full truncate text-left">
+                      {task.title}
+                    </button>
+                  </td>
+                  <td className="px-2 py-2.5">
+                    <span className={`inline-flex rounded px-1.5 py-0.5 text-[11px] font-bold ${BUCKET_TONE[task.bucket]}`}>
+                      {BUCKET_LABEL[task.bucket]}
+                    </span>
+                  </td>
+                  <td className="truncate px-2 py-2.5 text-[#626f86]">{task.assigneeName ?? "Chưa giao"}</td>
+                  <td className={`px-2 py-2.5 ${task.dueAt ? "text-[#626f86]" : "text-[#7a869a]"}`}>
+                    {task.dueAt ? formatDue(task.dueAt) : "Không hạn"}
+                  </td>
+                  <td className="relative px-2 py-2.5">
+                    <button
+                      type="button"
+                      aria-label={`Thao tác ${task.code}`}
+                      onClick={() => setMenuId((current) => (current === task.id ? null : task.id))}
+                      className="grid size-7 place-items-center rounded text-[#626f86] opacity-0 group-hover:opacity-100 hover:bg-white"
+                    >
+                      <MoreHorizontal size={14} />
+                    </button>
+                    {menuId === task.id ? (
+                      <div className="absolute top-9 right-2 z-20 w-48 rounded-md border border-[#dfe1e6] bg-white p-1 shadow-[0_8px_24px_rgba(9,30,66,0.16)]">
+                        <button type="button" onClick={() => void openTask(task)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover:bg-[#f7f8f9]">
+                          <Pencil size={13} /> Sửa
+                        </button>
+                        <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[12px] hover:bg-[#f7f8f9]">
+                          Giao
+                          <select
+                            aria-label={`Giao ${task.code}`}
+                            defaultValue="__pick__"
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              if (value === "__pick__") return;
+                              void assignTask(task, value === "__none__" ? "" : value);
+                            }}
+                            className="h-6 min-w-0 flex-1 rounded border border-[#dfe1e6] text-[11px]"
+                          >
+                            <option value="__pick__">Chọn…</option>
+                            <option value="__none__">Chưa giao</option>
+                            {members.map((member) => (
+                              <option key={member.userId} value={member.userId}>
+                                {member.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="button" onClick={() => void copyLink(task)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] hover:bg-[#f7f8f9]">
+                          <Copy size={13} /> Sao chép liên kết
+                        </button>
+                        <button type="button" onClick={() => void deleteTask(task)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[12px] text-[#ae2e24] hover:bg-[#fff5f4]">
+                          <Trash2 size={13} /> Xóa
+                        </button>
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
       {onCreate ? (
         <button type="button" onClick={onCreate} className="flex h-10 items-center gap-1.5 px-4 text-[13px] font-semibold text-[#0c66e4] hover:bg-[#f7f8f9]">
           <Plus size={14} />
           Thêm công việc
         </button>
+      ) : null}
+
+      {editor && spaceMeta ? (
+        <TaskDialog
+          key={editor.taskId ?? `new-${editor.listId}`}
+          workspaceId={workspaceId}
+          spaceId={editor.spaceId}
+          workspaceName={spaceMeta.workspaceName || workspaceName}
+          spaceName={spaceMeta.name}
+          lists={spaceMeta.lists}
+          statuses={spaceMeta.statuses}
+          members={spaceMeta.members}
+          task={openDraft}
+          presetListId={editor.listId}
+          currentUserId={user?.id ?? ""}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            onChanged();
+          }}
+        />
       ) : null}
     </article>
   );
@@ -750,8 +1279,25 @@ function Reports({ overview }: { overview: Overview }) {
         <p className="text-[13px] text-[#626f86]">
           {overview.completedTasks} hoàn thành / {overview.totalTasks} công việc · {overview.overdueTasks} trễ hạn
         </p>
+        <div className="mt-5 flex flex-wrap items-center gap-6">
+          <div className="relative grid size-[120px] place-items-center">
+            <div className="size-[120px] rounded-full" style={{ background: donut(overview.statusDistribution) }} />
+            <div className="absolute grid size-[72px] place-items-center rounded-full bg-white text-center">
+              <span className="text-[20px] leading-none font-semibold">{overview.totalTasks}</span>
+            </div>
+          </div>
+          <ul className="min-w-[180px] flex-1">
+            {overview.statusDistribution.map((row) => (
+              <li key={row.bucket} className="flex items-center gap-2 py-1 text-[12px]">
+                <span className="size-2 rounded-full" style={{ backgroundColor: row.color || BUCKET_COLOR[row.bucket] }} />
+                <span className="flex-1 text-[#44546f]">{row.name}</span>
+                <span className="font-semibold">{row.count}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </article>
-      <Members members={overview.members} />
+      <Members members={overview.members} coloredBars />
     </div>
   );
 }
@@ -796,7 +1342,14 @@ function Attention({ items }: { items: Overview["attention"] }) {
   );
 }
 
-function Members({ members }: { members: Overview["members"] }) {
+function workloadBarColor(percent: number) {
+  if (percent >= 80) return "#22a06b";
+  if (percent >= 50) return "#0c66e4";
+  if (percent >= 25) return "#e56910";
+  return "#8590a2";
+}
+
+function Members({ members, coloredBars = false }: { members: Overview["members"]; coloredBars?: boolean }) {
   return (
     <article className="rounded-[12px] border border-[#dfe1e6] bg-white">
       <div className="flex items-start justify-between px-5 pt-4">
@@ -834,7 +1387,13 @@ function Members({ members }: { members: Overview["members"] }) {
             <span className="text-center text-[13px]">{member.done}</span>
             <span className="flex items-center gap-2">
               <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#ebecf0]">
-                <span className="block h-full rounded-full bg-[#0c66e4]" style={{ width: `${member.workload}%` }} />
+                <span
+                  className="block h-full rounded-full"
+                  style={{
+                    width: `${member.workload}%`,
+                    backgroundColor: coloredBars ? workloadBarColor(member.workload) : "#0c66e4",
+                  }}
+                />
               </span>
               <span className="w-8 text-right text-[12px] text-[#626f86]">{member.workload}%</span>
             </span>

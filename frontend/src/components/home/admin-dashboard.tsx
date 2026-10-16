@@ -167,7 +167,9 @@ export function AdminDashboard() {
                 Tài khoản và quyền truy cập cấp đây
               </p>
             </div>
-            <span className="text-[12px] font-medium text-[#626f86]">Xem tất cả</span>
+            <Link href="/members" className="text-[12px] font-medium text-[#0c66e4] hover:underline">
+              Xem tất cả
+            </Link>
           </div>
           <div className="mt-2 divide-y divide-[#f1f2f4]">
             {summary.membersPreview.map((member) => (

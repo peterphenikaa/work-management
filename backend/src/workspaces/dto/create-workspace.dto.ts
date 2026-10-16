@@ -48,12 +48,18 @@ export class CreateWorkspaceDto {
   @MaxLength(4)
   icon?: string;
 
+  // Bỏ qua nếu gửi lên — chủ sở hữu luôn là người tạo (BE).
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  ownerId!: string;
+  ownerId?: string;
 
   @IsIn(['PRIVATE', 'PUBLIC'])
   accessType!: 'PRIVATE' | 'PUBLIC';
+
+  @IsOptional()
+  @IsIn(['ACTIVE', 'PAUSED', 'ARCHIVED'])
+  status?: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
 
   @IsOptional()
   @IsArray()

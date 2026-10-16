@@ -180,23 +180,7 @@ export function WorkspaceDetail() {
 
       {item ? (
         <>
-          <div className="mt-2.5 flex items-start justify-between gap-6">
-            <div className="min-w-0">
-              <h1 className="text-[25px] leading-8 tracking-[-0.4px] text-[#172b4d]">{item.name}</h1>
-              <p className="mt-1.5 text-[13px] text-[#626f86]">
-                {item.description?.trim() || "Chưa có mô tả."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="h-[34px] shrink-0 rounded-[4px] bg-[#f1f2f4] px-3 text-[13px] font-semibold text-[#172b4d]"
-            >
-              Chỉnh sửa Workspace
-            </button>
-          </div>
-
-          <div className="mt-6 grid overflow-hidden rounded-[8px] border border-[#dfe1e6] lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,1fr)]">
+          <div className="mt-4 grid overflow-hidden rounded-[8px] border border-[#dfe1e6] lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,1fr)]">
             <div className="flex items-center gap-4 border-[#dfe1e6] px-[22px] py-5 lg:border-r">
               <span className="grid size-[50px] shrink-0 place-items-center overflow-hidden rounded-[10px] bg-gradient-to-br from-[#0c66e4] to-[#0052cc] text-[16px] font-bold text-white">
                 {iconSrc ? (
@@ -205,7 +189,7 @@ export function WorkspaceDetail() {
                   mark
                 )}
               </span>
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="inline-flex rounded-[3px] bg-[#f3f0ff] px-1.5 py-0.5 text-[11px] font-bold tracking-wide text-[#5e4db2]">
                   {item.accessType}
                 </span>
@@ -214,11 +198,22 @@ export function WorkspaceDetail() {
                   {item.description?.trim() || "Chưa có mô tả."}
                 </span>
               </span>
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="h-[34px] shrink-0 rounded-[4px] bg-[#f1f2f4] px-3 text-[13px] font-semibold text-[#172b4d]"
+              >
+                Chỉnh sửa
+              </button>
             </div>
             <div className="grid grid-cols-2">
               <Stat label="Ngày tạo" value={formatDate(item.createdAt)} className="border-r border-b" />
               <Stat label="Cập nhật gần nhất" value={formatWhen(item.updatedAt)} className="border-b" />
-              <Stat label="Cấu trúc" value={`${spaces.length} Space · ${spaces.reduce((sum, space) => sum + (space.listCount ?? 0), 0)} List`} className="border-r" />
+              <Stat
+                label="Cấu trúc"
+                value={`${spaces.filter((space) => !space.archivedAt).length} Space · ${spaces.reduce((sum, space) => sum + (space.listCount ?? 0), 0)} List`}
+                className="border-r"
+              />
               <Stat label="Thành viên" value={`${item.memberCount} tài khoản`} />
             </div>
           </div>
@@ -227,12 +222,7 @@ export function WorkspaceDetail() {
             <div className="flex flex-col gap-4">
               <section className="overflow-hidden rounded-[7px] border border-[#dfe1e6]">
                 <header className="flex items-center justify-between gap-3 border-b border-[#dfe1e6] px-4 py-3">
-                  <span>
-                    <span className="block text-[14px] text-[#172b4d]">Cấu trúc Không gian & Dự án</span>
-                    <span className="mt-1 block text-[12px] text-[#626f86]">
-                      Dữ liệu cấp con được tải khi mở từng Space hoặc List.
-                    </span>
-                  </span>
+                  <span className="block text-[14px] text-[#172b4d]">Cấu trúc Không gian & Dự án</span>
                   <button
                     type="button"
                     onClick={() => setCreatingSpace(true)}
@@ -256,35 +246,107 @@ export function WorkspaceDetail() {
                       <span className="block text-[12px] text-[#626f86]">{spaces.length} Space trực thuộc</span>
                     </span>
                   </div>
-                  {spaces.map((space) => (
-                    <Link
-                      key={space.id}
-                      href={`/workspaces/${id}/spaces/${space.id}`}
-                      className="mt-2 flex h-12 items-center gap-2.5 rounded-[6px] border border-[#dfe1e6] px-2.5 pl-8 hover:bg-[#f7f8f9]"
-                    >
-                      <span
-                        className="grid size-[28px] place-items-center rounded-[6px]"
-                        style={{ backgroundColor: spaceSwatch(space.color) }}
+                  {spaces.map((space) => {
+                    const archived = Boolean(space.archivedAt);
+                    return (
+                      <div
+                        key={space.id}
+                        className={`mt-2 flex min-h-12 items-center gap-2.5 rounded-[6px] border border-[#dfe1e6] px-2.5 py-1.5 pl-8 ${archived ? "bg-[#f7f8f9]" : ""}`}
                       >
-                        <img src={spaceIcon(space.icon)} alt="" width={18} height={18} draggable={false} className="brightness-0 invert" />
-                      </span>
-                      <span>
-                        <span className="block text-[13px] font-bold text-[#172b4d]">{space.name}</span>
-                        <span className="block text-[12px] text-[#626f86]">{space.listCount ?? 0} List</span>
-                      </span>
-                    </Link>
-                  ))}
+                        {archived ? (
+                          <span className="flex min-w-0 flex-1 items-center gap-2.5">
+                            <span
+                              className="grid size-[28px] place-items-center rounded-[6px] opacity-60"
+                              style={{ backgroundColor: spaceSwatch(space.color) }}
+                            >
+                              <img src={spaceIcon(space.icon)} alt="" width={18} height={18} draggable={false} className="brightness-0 invert" />
+                            </span>
+                            <span className="min-w-0">
+                              <span className="flex items-center gap-1.5">
+                                <span className="block truncate text-[13px] font-bold text-[#626f86]">{space.name}</span>
+                                <span className="rounded-[3px] bg-[#f1f2f4] px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-[#626f86] uppercase">
+                                  Đã lưu trữ
+                                </span>
+                              </span>
+                              <span className="block text-[12px] text-[#626f86]">{space.listCount ?? 0} List</span>
+                            </span>
+                          </span>
+                        ) : (
+                          <Link
+                            href={`/workspaces/${id}/spaces/${space.id}`}
+                            className="flex min-w-0 flex-1 items-center gap-2.5 hover:opacity-90"
+                          >
+                            <span
+                              className="grid size-[28px] place-items-center rounded-[6px]"
+                              style={{ backgroundColor: spaceSwatch(space.color) }}
+                            >
+                              <img src={spaceIcon(space.icon)} alt="" width={18} height={18} draggable={false} className="brightness-0 invert" />
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-[13px] font-bold text-[#172b4d]">{space.name}</span>
+                              <span className="block text-[12px] text-[#626f86]">{space.listCount ?? 0} List</span>
+                            </span>
+                          </Link>
+                        )}
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {archived ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void api
+                                  .post(`/workspaces/${id}/spaces/${space.id}/restore`)
+                                  .then(() => setReloadKey((value) => value + 1))
+                                  .catch((reason: unknown) =>
+                                    setError(reason instanceof Error ? reason.message : "Không khôi phục được Space"),
+                                  )
+                              }
+                              className="h-8 rounded-[4px] bg-[#e9f2ff] px-2.5 text-[12px] font-semibold text-[#0c66e4] hover:bg-[#cce0ff]"
+                            >
+                              Mở lại
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void api
+                                  .post(`/workspaces/${id}/spaces/${space.id}/archive`)
+                                  .then(() => setReloadKey((value) => value + 1))
+                                  .catch((reason: unknown) =>
+                                    setError(reason instanceof Error ? reason.message : "Không lưu trữ được Space"),
+                                  )
+                              }
+                              className="h-8 rounded-[4px] bg-[#f1f2f4] px-2.5 text-[12px] font-semibold text-[#44546f] hover:bg-[#dfe1e6]"
+                            >
+                              Lưu trữ
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={`Xóa ${space.name}`}
+                            title="Xóa hẳn"
+                            onClick={() => {
+                              if (!window.confirm(`Xóa hẳn Space "${space.name}"? Mọi công việc trong Space cũng sẽ bị xóa.`)) return;
+                              void api
+                                .delete(`/workspaces/${id}/spaces/${space.id}`)
+                                .then(() => setReloadKey((value) => value + 1))
+                                .catch((reason: unknown) =>
+                                  setError(reason instanceof Error ? reason.message : "Không xóa được Space"),
+                                );
+                            }}
+                            className="grid size-8 place-items-center rounded text-[#ca3521] hover:bg-[#ffeceb]"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
 
               <section className="overflow-hidden rounded-[7px] border border-[#dfe1e6]">
                 <header className="flex items-center justify-between gap-3 border-b border-[#dfe1e6] px-4 py-3">
-                  <span>
-                    <span className="block text-[14px] text-[#172b4d]">Danh sách thành viên</span>
-                    <span className="mt-1 block text-[12px] text-[#626f86]">
-                      Vai trò và trạng thái truy cập hiện tại trong Workspace.
-                    </span>
-                  </span>
+                  <span className="block text-[14px] text-[#172b4d]">Danh sách thành viên</span>
                   <button
                     type="button"
                     onClick={() => setAdding((value) => !value)}

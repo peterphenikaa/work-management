@@ -48,6 +48,7 @@ enum AccessType {
 
 enum WorkspaceStatus {
   ACTIVE
+  PAUSED
   ARCHIVED
 }
 
@@ -61,6 +62,7 @@ enum InvitationStatus {
   ACCEPTED
   EXPIRED
   REVOKED
+  REJECTED
 }
 
 model Workspace {
@@ -161,6 +163,7 @@ model Space {
   memberCanCreateTask Boolean @default(false) @map("member_can_create_task")
   createdAt   DateTime     @default(now()) @map("created_at")
   updatedAt   DateTime     @updatedAt @map("updated_at")
+  archivedAt  DateTime?    @map("archived_at")
   deletedAt   DateTime?    @map("deleted_at")
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members     SpaceMember[]
@@ -170,6 +173,7 @@ model Space {
   sprints     Sprint[]
 
   @@index([workspaceId, deletedAt])
+  @@index([workspaceId, archivedAt])
   @@map("spaces")
 }
 
@@ -232,6 +236,9 @@ model Task {
   assigneeId  String?      @map("assignee_id")
   reporterId  String       @map("reporter_id")
   dueAt       DateTime?    @map("due_at")
+  startAt     DateTime?    @map("start_at")
+  storyPoints Int?         @map("story_points")
+  completedAt DateTime?    @map("completed_at")
   position    Int          @default(0)
   sprintId    String?      @map("sprint_id")
   createdAt   DateTime     @default(now()) @map("created_at")
@@ -336,6 +343,7 @@ enum NotificationType {
   STATUS
   REVIEW
   DEADLINE
+  INVITE
 }
 
 model Notification {

@@ -1,10 +1,11 @@
 "use client";
 
-import { AtSign, Bell, BellRing, CalendarClock, CheckCircle2, MessageSquare, Send, UserPlus } from "lucide-react";
+import { AtSign, Bell, BellRing, CalendarClock, CheckCircle2, Mail, MessageSquare, Send, UserPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { api, type Role } from "@/lib/api";
+import { ROLE_LABEL } from "@/lib/roles";
 
-type Item = {
+type NotifItem = {
   id: string;
   type: "ASSIGNED" | "MENTION" | "COMMENT" | "STATUS" | "REVIEW" | "DEADLINE";
   title: string;
@@ -14,6 +15,29 @@ type Item = {
   createdAt: string;
 };
 
+type PendingInvite = {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  role: Role;
+  expiresAt: string;
+};
+
+type BellItem =
+  | (NotifItem & { kind: "notif" })
+  | {
+      kind: "invite";
+      id: string;
+      type: "INVITE";
+      title: string;
+      body: string;
+      workspaceName: string;
+      read: boolean;
+      createdAt: string;
+      inviteId: string;
+      workspaceId: string;
+    };
+
 const META = {
   ASSIGNED: { icon: UserPlus, tint: "#e9f2ff", color: "#0c66e4" },
   MENTION: { icon: AtSign, tint: "#f3f0ff", color: "#6e5dc6" },
@@ -21,6 +45,7 @@ const META = {
   STATUS: { icon: CheckCircle2, tint: "#dcfff1", color: "#1f845a" },
   REVIEW: { icon: Send, tint: "#f8eee7", color: "#a54800" },
   DEADLINE: { icon: CalendarClock, tint: "#ffeceb", color: "#ae2e24" },
+  INVITE: { icon: Mail, tint: "#e9f2ff", color: "#0c66e4" },
 } as const;
 
 function relative(iso: string) {
@@ -34,18 +59,32 @@ function relative(iso: string) {
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<BellItem[]>([]);
   const [unread, setUnread] = useState(0);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   function load() {
-    api
-      .get<{ items: Item[]; unread: number }>("/notifications")
-      .then((response) => {
-        setItems(response.data.items);
-        setUnread(response.data.unread);
-      })
-      .catch(() => undefined);
+    Promise.all([
+      api.get<{ items: NotifItem[]; unread: number }>("/notifications").catch(() => ({ data: { items: [] as NotifItem[], unread: 0 } })),
+      api.get<{ items: PendingInvite[] }>("/workspaces/invitations/mine").catch(() => ({ data: { items: [] as PendingInvite[] } })),
+    ]).then(([notifRes, inviteRes]) => {
+      const invites: BellItem[] = inviteRes.data.items.map((invite) => ({
+        kind: "invite",
+        id: `invite-${invite.id}`,
+        inviteId: invite.id,
+        workspaceId: invite.workspaceId,
+        type: "INVITE",
+        title: `Lời mời vào ${invite.workspaceName}`,
+        body: `Vai trò ${ROLE_LABEL[invite.role]} · chờ bạn phản hồi`,
+        workspaceName: invite.workspaceName,
+        read: false,
+        createdAt: invite.expiresAt,
+      }));
+      const notifs: BellItem[] = notifRes.data.items.map((item) => ({ ...item, kind: "notif" as const }));
+      setItems([...invites, ...notifs]);
+      setUnread(notifRes.data.unread + invites.length);
+    });
   }
 
   useEffect(() => {
@@ -63,17 +102,43 @@ export function NotificationBell() {
     return () => window.removeEventListener("mousedown", onPointer);
   }, [open]);
 
-  function markRead(item: Item) {
-    if (item.read) return;
+  function markRead(item: BellItem) {
+    if (item.kind !== "notif" || item.read) return;
     setItems((current) => current.map((row) => (row.id === item.id ? { ...row, read: true } : row)));
     setUnread((count) => Math.max(0, count - 1));
     void api.post(`/notifications/${item.id}/read`).catch(() => undefined);
   }
 
   function markAll() {
-    setItems((current) => current.map((row) => ({ ...row, read: true })));
-    setUnread(0);
+    setItems((current) => current.map((row) => (row.kind === "notif" ? { ...row, read: true } : row)));
+    setUnread((count) => items.filter((item) => item.kind === "invite").length);
     void api.post("/notifications/read-all").catch(() => undefined);
+  }
+
+  async function acceptInvite(item: Extract<BellItem, { kind: "invite" }>) {
+    setBusyId(item.id);
+    try {
+      await api.post(`/workspaces/invitations/${item.inviteId}/accept`);
+      setItems((current) => current.filter((row) => row.id !== item.id));
+      setUnread((count) => Math.max(0, count - 1));
+    } catch {
+      // giữ nguyên danh sách nếu lỗi
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function rejectInvite(item: Extract<BellItem, { kind: "invite" }>) {
+    setBusyId(item.id);
+    try {
+      await api.post(`/workspaces/invitations/${item.inviteId}/reject`);
+      setItems((current) => current.filter((row) => row.id !== item.id));
+      setUnread((count) => Math.max(0, count - 1));
+    } catch {
+      // giữ nguyên danh sách nếu lỗi
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -113,6 +178,39 @@ export function NotificationBell() {
               {items.map((item) => {
                 const meta = META[item.type] ?? META.STATUS;
                 const Icon = meta.icon;
+                if (item.kind === "invite") {
+                  return (
+                    <li key={item.id} className="border-b border-[#eef0f3] px-3 py-2.5 last:border-b-0">
+                      <div className="flex items-start gap-2.5">
+                        <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full" style={{ backgroundColor: meta.tint, color: meta.color }}>
+                          <Icon size={14} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13px] font-semibold text-[#172b4d]">{item.title}</span>
+                          <span className="mt-0.5 block truncate text-[12px] text-[#626f86]">{item.body}</span>
+                          <span className="mt-2 flex gap-2">
+                            <button
+                              type="button"
+                              disabled={busyId === item.id}
+                              onClick={() => void acceptInvite(item)}
+                              className="h-7 rounded bg-[#0c66e4] px-2.5 text-[12px] font-semibold text-white disabled:opacity-55"
+                            >
+                              Tham gia
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busyId === item.id}
+                              onClick={() => void rejectInvite(item)}
+                              className="h-7 rounded border border-[#dfe1e6] bg-white px-2.5 text-[12px] font-semibold text-[#44546f] hover:bg-[#f7f8f9] disabled:opacity-55"
+                            >
+                              Từ chối
+                            </button>
+                          </span>
+                        </span>
+                      </div>
+                    </li>
+                  );
+                }
                 return (
                   <li key={item.id}>
                     <button

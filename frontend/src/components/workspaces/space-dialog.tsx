@@ -29,6 +29,7 @@ export type SpaceItem = {
   icon: SpaceIcon;
   color: SpaceColor;
   listCount?: number;
+  archivedAt?: string | null;
 };
 
 const ICONS: { id: SpaceIcon; icon: LucideIcon; label: string }[] = [
@@ -63,11 +64,6 @@ const ACCESS = [
     id: "PRIVATE" as const,
     title: "Riêng tư",
     detail: "Chỉ những thành viên được mời mới có thể truy cập.",
-  },
-  {
-    id: "TEAM" as const,
-    title: "Theo nhóm",
-    detail: "Kế thừa quyền từ các nhóm (Teams) được chỉ định.",
   },
 ];
 
@@ -153,7 +149,10 @@ export type EditableSpace = {
   views: SpaceView[];
   statuses: { id: string; name: string }[];
   members: { userId: string; role: Role }[];
+  archivedAt?: string | null;
 };
+
+type SpaceLifecycle = "ACTIVE" | "ARCHIVED";
 
 function categoryFor(name: string): Category {
   if (/hoàn/i.test(name)) return "DONE";
@@ -197,6 +196,7 @@ export function CreateSpaceDialog({
   const [icon, setIcon] = useState<SpaceIcon>(space?.icon ?? "ARCHIVE");
   const [color, setColor] = useState<SpaceColor>(space?.color ?? "BLUE");
   const [access, setAccess] = useState<AccessMode>(space?.accessType ?? "PUBLIC");
+  const [lifecycle, setLifecycle] = useState<SpaceLifecycle>(space?.archivedAt ? "ARCHIVED" : "ACTIVE");
   const [picked, setPicked] = useState<string[]>(space?.members.map((member) => member.userId) ?? []);
   const [seats, setSeats] = useState<Record<string, Seat>>(
     Object.fromEntries((space?.members ?? []).map((member) => [member.userId, seatFor(member.role)])),
@@ -234,10 +234,6 @@ export function CreateSpaceDialog({
     };
   }, [workspaceId, editing]);
 
-  const swatch = spaceSwatch(color);
-  const Icon = ICONS.find((item) => item.id === icon)?.icon ?? Folder;
-  const accessLabel = ACCESS.find((item) => item.id === access)?.title ?? "Mở";
-  const badgeDot = access === "PUBLIC" ? "#22A06B" : access === "TEAM" ? "#6E5DC6" : "#626F86";
   const needle = query.trim().toLocaleLowerCase("vi");
   const visible = people.filter(
     (person) => matchesQuery(person.name, person.email, needle) && (needle.length > 0 || picked.includes(person.userId)),
@@ -247,7 +243,8 @@ export function CreateSpaceDialog({
     const person = people.find((row) => row.userId === id);
     return person?.role === "LEADER" || person?.role === "MEMBER";
   });
-  const ready = name.trim().length > 0 && statuses.length > 0 && views.length > 0 && (access === "PUBLIC" || eligible);
+  const showMembers = access === "PRIVATE";
+  const ready = name.trim().length > 0 && statuses.length > 0 && views.length > 0 && (!showMembers || eligible);
 
   function addStatus() {
     if (statuses.length >= 12) {
@@ -300,7 +297,7 @@ export function CreateSpaceDialog({
         icon,
         color,
         accessType: access === "PUBLIC" ? "PUBLIC" : "PRIVATE",
-        memberIds: picked,
+        memberIds: access === "PUBLIC" ? [] : picked,
         views,
       };
       if (editing && space) {
@@ -308,11 +305,20 @@ export function CreateSpaceDialog({
           ...payload,
           statuses: statuses.map((status) => ({ ...(status.id ? { id: status.id } : {}), name: status.name.trim() })),
         });
+        const wasArchived = Boolean(space.archivedAt);
+        if (lifecycle === "ARCHIVED" && !wasArchived) {
+          await api.post(`/workspaces/${workspaceId}/spaces/${space.id}/archive`);
+        } else if (lifecycle === "ACTIVE" && wasArchived) {
+          await api.post(`/workspaces/${workspaceId}/spaces/${space.id}/restore`);
+        }
       } else {
-        await api.post(`/workspaces/${workspaceId}/spaces`, {
+        const created = await api.post<{ id: string }>(`/workspaces/${workspaceId}/spaces`, {
           ...payload,
           statuses: statuses.map((status) => status.name.trim()),
         });
+        if (lifecycle === "ARCHIVED" && created.data.id) {
+          await api.post(`/workspaces/${workspaceId}/spaces/${created.data.id}/archive`);
+        }
       }
       onCreated();
     } catch (reason: unknown) {
@@ -353,7 +359,7 @@ export function CreateSpaceDialog({
             <h3 className="text-[14px] font-semibold text-[#172b4d]">Thông tin cơ bản</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-1.5 block text-[12px] font-medium text-[#44546f]">Tên Space</span>
+                <span className="mb-1.5 block text-[12px] font-medium text-[#44546f]">Tên Space *</span>
                 <input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
@@ -372,20 +378,17 @@ export function CreateSpaceDialog({
                   className={FIELD}
                 />
               </label>
-            </div>
-
-            <div className="mt-3 flex h-16 items-center gap-3 rounded-lg border border-[#dfe1e6] bg-white px-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-md text-white" style={{ backgroundColor: swatch }}>
-                <Icon size={18} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-semibold text-[#172b4d]">{name.trim() || "Tên Space"}</span>
-                <span className="block truncate text-[12px] text-[#626f86]">{description.trim() || "Chưa có mô tả"}</span>
-              </span>
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#dfe1e6] bg-[#f7f8f9] px-2.5 py-1 text-[12px] font-medium text-[#172b4d]">
-                <span className="size-1.5 rounded-full" style={{ backgroundColor: badgeDot }} />
-                {accessLabel}
-              </span>
+              <label className="block sm:col-span-2">
+                <span className="mb-1.5 block text-[12px] font-medium text-[#44546f]">Trạng thái Space *</span>
+                <select
+                  value={lifecycle}
+                  onChange={(event) => setLifecycle(event.target.value as SpaceLifecycle)}
+                  className={FIELD}
+                >
+                  <option value="ACTIVE">Đang hoạt động</option>
+                  <option value="ARCHIVED">Lưu trữ</option>
+                </select>
+              </label>
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -439,7 +442,7 @@ export function CreateSpaceDialog({
 
           <section className="rounded-lg bg-[#f7f8f9] p-4">
             <h3 className="text-[14px] font-semibold text-[#172b4d]">Quyền truy cập & Thành viên</h3>
-            <div className="mt-3 grid items-start gap-4 lg:grid-cols-2">
+            <div className={`mt-3 grid items-start gap-4 ${showMembers ? "lg:grid-cols-2" : ""}`}>
               <div className="flex flex-col gap-3 pt-1">
                 {ACCESS.map((item) => {
                   const selected = access === item.id;
@@ -461,101 +464,103 @@ export function CreateSpaceDialog({
                 })}
               </div>
 
-              <div>
-                <p className="text-[13px] font-semibold text-[#172b4d]">{editing ? "Thành viên Space" : "Thành viên khởi tạo"}</p>
-                <div className="relative mt-2">
-                  <Search size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[#626f86]" />
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Tìm kiếm thành viên..."
-                    className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white pr-3 pl-8 text-[13px] text-[#172b4d] outline-none placeholder:text-[#a5adba] focus:border-[#0c66e4]"
-                  />
-                </div>
-                <div className="mt-2 flex max-h-[196px] flex-col gap-1.5 overflow-y-auto">
-                  {visible.length === 0 && inviteHits.length === 0 ? (
-                    <p className="rounded-md border border-[#dfe1e6] bg-white px-3 py-3 text-[13px] text-[#626f86]">
-                      {needle
-                        ? "Không tìm thấy thành viên."
-                        : people.length === 0
-                          ? "Workspace chưa có thành viên hoạt động."
-                          : "Chưa chọn thành viên. Tìm theo tên hoặc email để thêm lại."}
-                    </p>
-                  ) : (
-                    <>
-                      {visible.map((person) => {
-                        const selected = picked.includes(person.userId);
-                        return (
-                          <div key={person.userId} className="flex items-center gap-2 rounded-md border border-[#dfe1e6] bg-white px-2 py-1.5">
-                            <Avatar name={person.name} />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[13px] font-semibold text-[#172b4d]">{person.name}</span>
-                              <span className="block truncate text-[12px] text-[#626f86]">{person.email}</span>
-                            </span>
-                            <span className="relative shrink-0">
-                              <select
-                                aria-label={`Vai trò của ${person.name}`}
-                                value={seats[person.userId] ?? "MEMBER"}
-                                onChange={(event) =>
-                                  setSeats((current) => ({ ...current, [person.userId]: event.target.value as Seat }))
-                                }
-                                className="h-8 appearance-none rounded-md border border-[#dfe1e6] bg-white pr-7 pl-2 text-[12px] text-[#172b4d] outline-none"
-                              >
-                                {SEATS.map((seat) => (
-                                  <option key={seat.id} value={seat.id}>
-                                    {seat.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown size={14} className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[#626f86]" />
-                            </span>
-                            {selected ? (
-                              <button
-                                type="button"
-                                aria-label={`Gỡ ${person.name}`}
-                                onClick={() => setPicked((current) => current.filter((id) => id !== person.userId))}
-                                className="grid size-7 shrink-0 place-items-center rounded-md text-[#626f86] hover:bg-[#f1f2f4] hover:text-[#ae2e24]"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                aria-label={`Thêm ${person.name}`}
-                                onClick={() => setPicked((current) => [...current, person.userId])}
-                                className="grid size-7 shrink-0 place-items-center rounded-md text-[#0c66e4] hover:bg-[#e9f2ff]"
-                              >
-                                <Plus size={14} />
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {inviteHits.map((invite) => {
-                        const label = invite.name?.trim() || invite.email;
-                        return (
-                          <div key={invite.id} className="flex items-center gap-2 rounded-md border border-[#dfe1e6] bg-white px-2 py-1.5">
-                            <Avatar name={label} />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[13px] font-semibold text-[#172b4d]">{label}</span>
-                              <span className="block truncate text-[12px] text-[#626f86]">
-                                {invite.name?.trim() ? invite.email : "Chờ tham gia"}
+              {showMembers ? (
+                <div>
+                  <p className="text-[13px] font-semibold text-[#172b4d]">{editing ? "Thành viên Space" : "Thành viên khởi tạo"}</p>
+                  <div className="relative mt-2">
+                    <Search size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[#626f86]" />
+                    <input
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Tìm kiếm thành viên..."
+                      className="h-9 w-full rounded-md border border-[#dfe1e6] bg-white pr-3 pl-8 text-[13px] text-[#172b4d] outline-none placeholder:text-[#a5adba] focus:border-[#0c66e4]"
+                    />
+                  </div>
+                  <div className="mt-2 flex max-h-[196px] flex-col gap-1.5 overflow-y-auto">
+                    {visible.length === 0 && inviteHits.length === 0 ? (
+                      <p className="rounded-md border border-[#dfe1e6] bg-white px-3 py-3 text-[13px] text-[#626f86]">
+                        {needle
+                          ? "Không tìm thấy thành viên."
+                          : people.length === 0
+                            ? "Workspace chưa có thành viên hoạt động."
+                            : "Chưa chọn thành viên. Tìm theo tên hoặc email để thêm lại."}
+                      </p>
+                    ) : (
+                      <>
+                        {visible.map((person) => {
+                          const selected = picked.includes(person.userId);
+                          return (
+                            <div key={person.userId} className="flex items-center gap-2 rounded-md border border-[#dfe1e6] bg-white px-2 py-1.5">
+                              <Avatar name={person.name} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold text-[#172b4d]">{person.name}</span>
+                                <span className="block truncate text-[12px] text-[#626f86]">{person.email}</span>
                               </span>
-                            </span>
-                            <span className="shrink-0 rounded-full bg-[#fff7d6] px-2 py-1 text-[11px] font-medium text-[#7f5f01]">
-                              Chờ tham gia
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
+                              <span className="relative shrink-0">
+                                <select
+                                  aria-label={`Vai trò của ${person.name}`}
+                                  value={seats[person.userId] ?? "MEMBER"}
+                                  onChange={(event) =>
+                                    setSeats((current) => ({ ...current, [person.userId]: event.target.value as Seat }))
+                                  }
+                                  className="h-8 appearance-none rounded-md border border-[#dfe1e6] bg-white pr-7 pl-2 text-[12px] text-[#172b4d] outline-none"
+                                >
+                                  {SEATS.map((seat) => (
+                                    <option key={seat.id} value={seat.id}>
+                                      {seat.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <ChevronDown size={14} className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-[#626f86]" />
+                              </span>
+                              {selected ? (
+                                <button
+                                  type="button"
+                                  aria-label={`Gỡ ${person.name}`}
+                                  onClick={() => setPicked((current) => current.filter((id) => id !== person.userId))}
+                                  className="grid size-7 shrink-0 place-items-center rounded-md text-[#626f86] hover:bg-[#f1f2f4] hover:text-[#ae2e24]"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  aria-label={`Thêm ${person.name}`}
+                                  onClick={() => setPicked((current) => [...current, person.userId])}
+                                  className="grid size-7 shrink-0 place-items-center rounded-md text-[#0c66e4] hover:bg-[#e9f2ff]"
+                                >
+                                  <Plus size={14} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {inviteHits.map((invite) => {
+                          const label = invite.name?.trim() || invite.email;
+                          return (
+                            <div key={invite.id} className="flex items-center gap-2 rounded-md border border-[#dfe1e6] bg-white px-2 py-1.5">
+                              <Avatar name={label} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold text-[#172b4d]">{label}</span>
+                                <span className="block truncate text-[12px] text-[#626f86]">
+                                  {invite.name?.trim() ? invite.email : "Chờ tham gia"}
+                                </span>
+                              </span>
+                              <span className="shrink-0 rounded-full bg-[#fff7d6] px-2 py-1 text-[11px] font-medium text-[#7f5f01]">
+                                Chờ tham gia
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>
+                  <p className="mt-3 text-[12px] leading-5 text-[#626f86]">
+                    Quản trị viên có toàn quyền cấu hình. Thành viên có thể tạo task. Khách chỉ có quyền xem.
+                  </p>
                 </div>
-              </div>
+              ) : null}
             </div>
-            <p className="mt-3 text-[12px] leading-5 text-[#626f86]">
-              Quản trị viên có toàn quyền cấu hình. Thành viên có thể tạo task. Khách chỉ có quyền xem.
-            </p>
           </section>
 
           <section className="rounded-lg bg-[#f7f8f9] p-4">
