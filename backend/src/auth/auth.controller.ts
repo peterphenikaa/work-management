@@ -10,10 +10,11 @@ import type { AuthUser } from './auth.types.js';
 
 const COOKIE = 'access_token';
 
+// First-party via FE `/api` proxy → Lax works in Incognito (None bị Chrome chặn third-party).
 const cookieOptions: CookieOptions = {
   httpOnly: true,
   secure: true,
-  sameSite: 'none',
+  sameSite: 'lax',
   path: '/',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
@@ -52,7 +53,7 @@ export class AuthController {
     response.clearCookie(COOKIE, {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'lax',
       path: '/',
     });
     return { ok: true };

@@ -13,8 +13,9 @@ export class ApiError extends Error {
   }
 }
 
+// Always same-origin `/api` (Next rewrite → backend). Cookie là first-party → Incognito OK.
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api",
+  baseURL: "/api",
   withCredentials: true,
   timeout: 15000,
 });
