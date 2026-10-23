@@ -60,17 +60,24 @@ export function MembersScreen() {
 
   useEffect(() => {
     if (user?.role !== "ADMIN") return;
+    setLoading(true);
     api
-      .get<{ items: WorkspaceOption[] }>("/workspaces?page=1&pageSize=50&sort=name&order=asc")
+      .get<{ items: WorkspaceOption[] }>("/workspaces", {
+        params: { page: 1, pageSize: 50, sort: "name", order: "asc" },
+      })
       .then((response) => {
         const active = response.data.items.filter((row) => row.status !== "ARCHIVED");
         setWorkspaces(active);
+        setError("");
         setScope((current) => {
           if (current && active.some((row) => row.id === current)) return current;
           return active[0]?.id ?? "";
         });
+        if (active.length === 0) setLoading(false);
       })
       .catch((reason: unknown) => {
+        setWorkspaces([]);
+        setScope("");
         setError(reason instanceof Error ? reason.message : "Không tải được danh sách workspace");
         setLoading(false);
       });
