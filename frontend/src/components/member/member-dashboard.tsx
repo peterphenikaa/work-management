@@ -7,7 +7,7 @@ import { BUCKET_LABEL, isDueSoon, isDueToday, isOverdueTask, useMemberData, type
 import { Filter } from "@/components/spaces/space-detail";
 import { api } from "@/lib/api";
 
-type Scope = "assigned" | "today" | "overdue" | "done";
+type Scope = "team" | "assigned" | "today" | "overdue" | "done";
 type Period = "week" | "month";
 
 export const PRIORITY_LABEL = { URGENT: "Khẩn cấp", HIGH: "Cao", MEDIUM: "Trung bình", LOW: "Thấp" } as const;
@@ -27,10 +27,11 @@ const BUCKET_TONE: Record<Bucket, string> = {
 };
 
 const SCOPE_LABEL: Record<Scope, string> = {
+  team: "Tất cả công việc nhóm",
   assigned: "Được giao cho tôi",
-  today: "Đến hạn hôm nay",
-  overdue: "Quá hạn",
-  done: "Đã hoàn thành",
+  today: "Đến hạn hôm nay (của tôi)",
+  overdue: "Quá hạn (của tôi)",
+  done: "Đã hoàn thành (của tôi)",
 };
 
 function completedWithin(task: MemberTask, period: Period) {
@@ -50,7 +51,7 @@ function formatDate(iso: string | null) {
 
 export function MemberDashboard() {
   const data = useMemberData();
-  const [scope, setScope] = useState<Scope>("assigned");
+  const [scope, setScope] = useState<Scope>("team");
   const [period, setPeriod] = useState<Period>("week");
   const [spaceId, setSpaceId] = useState("all");
   const [listId, setListId] = useState("all");
@@ -61,20 +62,24 @@ export function MemberDashboard() {
   const [busyId, setBusyId] = useState("");
   const [notice, setNotice] = useState("");
 
+  const team = useMemo(() => data?.tasks ?? [], [data]);
   const mine = useMemo(() => (data ? data.tasks.filter((task) => task.assigneeId === data.userId) : []), [data]);
   const stats = useMemo(
     () => ({
+      team: team.length,
+      teamOpen: team.filter((task) => task.bucket !== "DONE").length,
       assigned: mine.length,
       open: mine.filter((task) => task.bucket !== "DONE").length,
       today: mine.filter((task) => task.bucket !== "DONE" && isDueToday(task)).length,
       overdue: mine.filter(isOverdueTask).length,
       done: mine.filter((task) => task.bucket === "DONE" && completedWithin(task, period)).length,
     }),
-    [mine, period],
+    [team, mine, period],
   );
 
   const rows = useMemo(() => {
-    const scoped = mine.filter((task) => {
+    const source = scope === "team" ? team : mine;
+    const scoped = source.filter((task) => {
       if (scope === "today") return task.bucket !== "DONE" && isDueToday(task);
       if (scope === "overdue") return isOverdueTask(task);
       if (scope === "done") return task.bucket === "DONE" && completedWithin(task, period);
@@ -98,7 +103,7 @@ export function MemberDashboard() {
       if (a !== b) return a - b;
       return PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority];
     });
-  }, [mine, scope, period, spaceId, listId, bucket, priority, due]);
+  }, [team, mine, scope, period, spaceId, listId, bucket, priority, due]);
 
   if (!data) return null;
   const space = data.spaces.find((item) => item.id === spaceId);
@@ -121,15 +126,18 @@ export function MemberDashboard() {
   return (
     <section className="mx-auto flex w-full max-w-[1240px] flex-col gap-4 px-6 py-6">
       <div>
-        <p className="text-[12px] text-[#626f86]">Workspace {data.workspaceName} / Công việc của tôi</p>
-        <h1 className="mt-1 text-[28px] leading-9 font-semibold tracking-[-0.02em] text-[#172b4d]">Công việc của tôi</h1>
-        <p className="mt-1 max-w-[640px] text-[13px] text-[#626f86]">Chỉ hiển thị công việc giao cho bạn trong các Space bạn được truy cập.</p>
+        <p className="text-[12px] text-[#626f86]">Workspace {data.workspaceName} / Công việc nhóm</p>
+        <h1 className="mt-1 text-[28px] leading-9 font-semibold tracking-[-0.02em] text-[#172b4d]">Công việc nhóm</h1>
+        <p className="mt-1 max-w-[640px] text-[13px] text-[#626f86]">
+          Thành viên cùng Space xem được toàn bộ công việc của team. Dùng thẻ bên dưới nếu chỉ muốn lọc việc của bạn.
+        </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard active={scope === "assigned"} onClick={() => setScope("assigned")} icon={<ListTodo size={18} className="text-[#0c66e4]" />} tint="#e9f2ff" label="ĐƯỢC GIAO" detail={`${stats.open} chưa hoàn thành`} value={stats.assigned} />
-        <StatCard active={scope === "today"} onClick={() => setScope("today")} icon={<CalendarDays size={18} className="text-[#a54800]" />} tint="#fff3eb" label="ĐẾN HẠN HÔM NAY" detail="Chưa hoàn thành" value={stats.today} />
-        <StatCard active={scope === "overdue"} onClick={() => setScope("overdue")} icon={<Flag size={18} className="text-[#ae2e24]" />} tint="#ffeceb" label="QUÁ HẠN" detail="Không tính đã hoàn thành" value={stats.overdue} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <StatCard active={scope === "team"} onClick={() => setScope("team")} icon={<ListTodo size={18} className="text-[#0c66e4]" />} tint="#e9f2ff" label="CẢ NHÓM" detail={`${stats.teamOpen} chưa hoàn thành`} value={stats.team} />
+        <StatCard active={scope === "assigned"} onClick={() => setScope("assigned")} icon={<ListTodo size={18} className="text-[#5e4db2]" />} tint="#f3f0ff" label="GIAO CHO TÔI" detail={`${stats.open} chưa hoàn thành`} value={stats.assigned} />
+        <StatCard active={scope === "today"} onClick={() => setScope("today")} icon={<CalendarDays size={18} className="text-[#a54800]" />} tint="#fff3eb" label="ĐẾN HẠN HÔM NAY" detail="Của tôi · chưa xong" value={stats.today} />
+        <StatCard active={scope === "overdue"} onClick={() => setScope("overdue")} icon={<Flag size={18} className="text-[#ae2e24]" />} tint="#ffeceb" label="QUÁ HẠN" detail="Của tôi" value={stats.overdue} />
         <StatCard
           active={scope === "done"}
           onClick={() => setScope("done")}
@@ -223,16 +231,25 @@ export function MemberDashboard() {
           <p className="px-4 py-10 text-center text-[13px] text-[#ae2e24]">{data.error}</p>
         ) : rows.length === 0 ? (
           <p className="px-4 py-10 text-center text-[13px] text-[#626f86]">
-            {hasFilter ? "Không có công việc khớp bộ lọc." : mine.length === 0 ? "Chưa có công việc nào được giao cho bạn." : "Không có công việc trong mục này."}
+            {hasFilter
+              ? "Không có công việc khớp bộ lọc."
+              : scope === "team"
+                ? team.length === 0
+                  ? "Nhóm chưa có công việc nào trong các Space bạn được truy cập."
+                  : "Không có công việc trong mục này."
+                : mine.length === 0
+                  ? "Chưa có công việc nào được giao cho bạn."
+                  : "Không có công việc trong mục này."}
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-left">
+            <table className="w-full min-w-[960px] border-collapse text-left">
               <thead>
                 <tr className="border-b border-[#eef0f3] text-[11px] font-bold tracking-wide text-[#7a869a]">
                   <th className="w-[84px] px-4 py-2">MÃ</th>
                   <th className="px-3 py-2">CÔNG VIỆC</th>
-                  <th className="w-[200px] px-3 py-2">SPACE / LIST</th>
+                  <th className="w-[160px] px-3 py-2">NGƯỜI LÀM</th>
+                  <th className="w-[180px] px-3 py-2">SPACE / LIST</th>
                   <th className="w-[100px] px-3 py-2">ƯU TIÊN</th>
                   <th className="w-[104px] px-3 py-2">HẠN CHÓT</th>
                   <th className="w-[170px] px-3 py-2">TRẠNG THÁI</th>
@@ -245,11 +262,12 @@ export function MemberDashboard() {
                   return (
                     <tr key={task.id} className="border-b border-[#eef0f3] text-[13px] text-[#172b4d] hover:bg-[#f7f8f9]">
                       <td className="px-4 py-2.5 font-semibold text-[#0c66e4]">{task.code}</td>
-                      <td className="max-w-[320px] px-3 py-2.5 font-medium">
+                      <td className="max-w-[280px] px-3 py-2.5 font-medium">
                         <button type="button" onClick={() => setOpenId(task.id)} className="block w-full truncate text-left hover:text-[#0c66e4]">
                           {task.title}
                         </button>
                       </td>
+                      <td className="truncate px-3 py-2.5 text-[#44546f]">{task.assigneeName ?? "Chưa gán"}</td>
                       <td className="truncate px-3 py-2.5 text-[#44546f]">
                         {task.spaceName} / {task.listName}
                       </td>

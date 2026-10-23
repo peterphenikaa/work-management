@@ -62,7 +62,7 @@ const NAV: { label: string; items: { tab: string; label: string; icon: LucideIco
 
 // Member không có Backlog/Báo cáo quản trị; có thêm trung tâm thông báo cá nhân.
 const MEMBER_NAV: typeof NAV = [
-  { label: "Cá nhân", items: [{ tab: "dashboard", label: "Công việc của tôi", icon: LayoutGrid }] },
+  { label: "Tổng quan", items: [{ tab: "dashboard", label: "Công việc nhóm", icon: LayoutGrid }] },
   {
     label: "Dự án",
     items: [
