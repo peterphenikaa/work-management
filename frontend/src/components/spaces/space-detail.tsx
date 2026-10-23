@@ -752,7 +752,7 @@ export function BoardView({
               setOverId(null);
               const taskId = event.dataTransfer.getData("text/plain") || draggingId.current;
               draggingId.current = "";
-              if (taskId) onMove(taskId, status.id);
+              if (taskId && (!canMove || canMove(taskId))) onMove(taskId, status.id);
             }}
             className={`flex w-[250px] shrink-0 flex-col rounded-lg p-2 ${overId === status.id ? "bg-[#e9f2ff] ring-1 ring-[#0c66e4]" : "bg-[#f4f5f7]"}`}
           >

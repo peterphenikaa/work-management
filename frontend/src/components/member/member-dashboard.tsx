@@ -111,6 +111,10 @@ export function MemberDashboard() {
 
   async function changeStatus(task: MemberTask, statusId: string) {
     if (!data || statusId === task.statusId) return;
+    if (task.assigneeId !== data.userId) {
+      setNotice("Bạn chỉ được chuyển trạng thái công việc được giao cho mình");
+      return;
+    }
     setBusyId(task.id);
     setNotice("");
     try {
@@ -279,7 +283,8 @@ export function MemberDashboard() {
                         <select
                           aria-label={`Trạng thái ${task.code}`}
                           value={task.statusId}
-                          disabled={busyId === task.id}
+                          disabled={busyId === task.id || task.assigneeId !== data.userId}
+                          title={task.assigneeId !== data.userId ? "Chỉ người được giao mới đổi được trạng thái" : undefined}
                           onChange={(event) => void changeStatus(task, event.target.value)}
                           className={`h-7 max-w-full rounded-full px-2.5 text-[11px] font-bold outline-none disabled:opacity-60 ${BUCKET_TONE[task.bucket]}`}
                         >

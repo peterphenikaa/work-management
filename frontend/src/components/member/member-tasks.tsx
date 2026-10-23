@@ -76,6 +76,10 @@ export function MemberTasks({ view }: { view: "board" | "list" }) {
     if (!data || !space) return;
     const task = space.tasks.find((item) => item.id === taskId);
     if (!task || (moved[taskId] ?? task.statusId) === statusId) return;
+    if (task.assigneeId !== data.userId) {
+      setNotice("Bạn chỉ được chuyển trạng thái công việc được giao cho mình");
+      return;
+    }
     setNotice("");
     setMoved((current) => ({ ...current, [taskId]: statusId }));
     try {
@@ -174,7 +178,14 @@ export function MemberTasks({ view }: { view: "board" | "list" }) {
       </div>
 
       {view === "board" ? (
-        <BoardView statuses={space.statuses} tasks={tasks} onMove={(taskId, statusId) => void moveTask(taskId, statusId)} onOpen={setOpenId} onCreate={space.memberCanCreateTask && space.lists.length > 0 ? (statusId) => setCreating({ statusId }) : undefined} />
+        <BoardView
+          statuses={space.statuses}
+          tasks={tasks}
+          canMove={(taskId) => space.tasks.find((task) => task.id === taskId)?.assigneeId === data.userId}
+          onMove={(taskId, statusId) => void moveTask(taskId, statusId)}
+          onOpen={setOpenId}
+          onCreate={space.memberCanCreateTask && space.lists.length > 0 ? (statusId) => setCreating({ statusId }) : undefined}
+        />
       ) : (
         <ListView statuses={space.statuses} tasks={tasks} hasLists={space.lists.length > 0} filtered={filtered} onOpen={setOpenId} readOnly onCreate={space.memberCanCreateTask ? () => setCreating({}) : undefined} />
       )}

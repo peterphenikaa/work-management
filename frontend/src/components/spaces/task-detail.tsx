@@ -115,7 +115,8 @@ export function TaskDialog({
   const [deleting, setDeleting] = useState(false);
 
   const locked = memberMode ? !creating : !creating && !editing;
-  const canChangeStatus = memberMode ? !creating : creating || editing;
+  const ownsTask = Boolean(task && task.assigneeId === actorId);
+  const canChangeStatus = memberMode ? !creating && ownsTask : creating || editing;
   const showEditChrome = creating || editing;
   const canDelete = !creating && !memberMode && Boolean(task);
 
@@ -318,6 +319,10 @@ export function TaskDialog({
     setError("");
     if (memberMode && task) {
       const target = nextStatusId ?? statusId;
+      if (target !== task.statusId && task.assigneeId !== actorId) {
+        setError("Bạn chỉ được chuyển trạng thái công việc được giao cho mình");
+        return;
+      }
       try {
         if (target !== task.statusId) {
           await api.patch(`/workspaces/${workspaceId}/spaces/${spaceId}/tasks/${task.id}`, { statusId: target });

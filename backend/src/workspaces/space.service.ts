@@ -610,6 +610,9 @@ export class SpaceService {
       },
     });
     if (!task) throw new NotFoundException('Không tìm thấy công việc');
+    if (access.role === 'MEMBER' && task.assigneeId !== actor.id) {
+      throw new ForbiddenException('Thành viên chỉ được chuyển trạng thái công việc được giao cho mình');
+    }
     const listId = dto.listId ?? task.listId;
     if (listId !== task.listId) await this.requireList(workspaceId, spaceId, listId);
     const statusId = dto.statusId ? await this.resolveStatus(spaceId, dto.statusId) : task.statusId;
