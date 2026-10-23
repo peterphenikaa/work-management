@@ -7,14 +7,6 @@ import { api, type Role } from "@/lib/api";
 import { ROLE_LABEL, initials } from "@/lib/roles";
 import { useShellUser } from "@/components/shell/app-shell";
 
-type Person = {
-  id: string;
-  name: string;
-  email: string;
-  role: Role;
-  locked: boolean;
-};
-
 type WorkspaceOption = {
   id: string;
   name: string;
@@ -30,7 +22,6 @@ type WorkspaceMember = {
   isOwner: boolean;
 };
 
-const ACCOUNT_ROLES = ["ADMIN", "MEMBER"] as const;
 const WORKSPACE_ROLES = ["ADMIN", "LEADER", "MEMBER"] as const;
 const AVATAR = ["#5e4db2", "#6e5dc6", "#e56910", "#159b91", "#0c66e4", "#ae4787"];
 const ROLE_TONE: Record<Role, string> = {
@@ -39,16 +30,13 @@ const ROLE_TONE: Record<Role, string> = {
   MEMBER: "bg-[#f4f5f7] text-[#44546f]",
 };
 
-type LockConfirm = { person: Person | WorkspaceMember; nextLocked: boolean };
-type DeleteConfirm =
-  | { kind: "account"; person: Person }
-  | { kind: "workspace"; member: WorkspaceMember };
+type LockConfirm = { member: WorkspaceMember; nextLocked: boolean };
+type DeleteConfirm = { member: WorkspaceMember };
 
 export function MembersScreen() {
   const user = useShellUser();
-  const [scope, setScope] = useState<"system" | string>("system");
+  const [scope, setScope] = useState<string>("");
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
-  const [people, setPeople] = useState<Person[]>([]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -56,20 +44,7 @@ export function MembersScreen() {
   const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirm | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const workspaceMode = scope !== "system";
   const selectedWorkspace = workspaces.find((row) => row.id === scope);
-
-  const loadSystem = useCallback(() => {
-    setLoading(true);
-    api
-      .get<{ items: Person[] }>("/workspaces/people")
-      .then((response) => {
-        setPeople(response.data.items);
-        setError("");
-      })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Không tải được thành viên"))
-      .finally(() => setLoading(false));
-  }, []);
 
   const loadWorkspace = useCallback((workspaceId: string) => {
     setLoading(true);
@@ -87,38 +62,39 @@ export function MembersScreen() {
     if (user?.role !== "ADMIN") return;
     api
       .get<{ items: WorkspaceOption[] }>("/workspaces?page=1&pageSize=100&sort=name&order=asc")
-      .then((response) => setWorkspaces(response.data.items.filter((row) => row.status !== "ARCHIVED")))
-      .catch(() => undefined);
+      .then((response) => {
+        const active = response.data.items.filter((row) => row.status !== "ARCHIVED");
+        setWorkspaces(active);
+        setScope((current) => {
+          if (current && active.some((row) => row.id === current)) return current;
+          return active[0]?.id ?? "";
+        });
+      })
+      .catch((reason: unknown) => {
+        setError(reason instanceof Error ? reason.message : "Không tải được danh sách workspace");
+        setLoading(false);
+      });
   }, [user?.role]);
 
   useEffect(() => {
     if (user?.role !== "ADMIN") return;
-    if (scope === "system") loadSystem();
-    else loadWorkspace(scope);
-  }, [user?.role, scope, loadSystem, loadWorkspace]);
+    if (!scope) {
+      setMembers([]);
+      setLoading(false);
+      return;
+    }
+    loadWorkspace(scope);
+  }, [user?.role, scope, loadWorkspace]);
 
   if (user && user.role !== "ADMIN") {
     return <section className="px-8 pt-8 text-[14px] text-[#626f86]">Chỉ quản trị viên xem được màn này.</section>;
   }
 
-  const rows = workspaceMode ? members : people;
-  const active = workspaceMode ? members.filter((row) => !row.locked).length : people.filter((row) => !row.locked).length;
-  const lockedCount = rows.length - active;
-
-  async function changeAccountRole(person: Person, role: Role) {
-    setError("");
-    const previous = people;
-    setPeople((current) => current.map((row) => (row.id === person.id ? { ...row, role } : row)));
-    try {
-      await api.patch(`/workspaces/people/${person.id}`, { role });
-    } catch (reason: unknown) {
-      setPeople(previous);
-      setError(reason instanceof Error ? reason.message : "Không đổi được vai trò");
-    }
-  }
+  const active = members.filter((row) => !row.locked).length;
+  const lockedCount = members.length - active;
 
   async function changeWorkspaceRole(member: WorkspaceMember, role: Role) {
-    if (!workspaceMode || member.isOwner) return;
+    if (member.isOwner) return;
     setError("");
     const previous = members;
     setMembers((current) => current.map((row) => (row.userId === member.userId ? { ...row, role } : row)));
@@ -134,16 +110,10 @@ export function MembersScreen() {
     if (!lockConfirm) return;
     setBusy(true);
     setError("");
-    const target = lockConfirm.person;
-    const next = lockConfirm.nextLocked;
-    const userId = "id" in target ? target.id : target.userId;
+    const { member, nextLocked } = lockConfirm;
     try {
-      await api.patch(`/workspaces/people/${userId}`, { locked: next });
-      if (workspaceMode) {
-        setMembers((current) => current.map((row) => (row.userId === userId ? { ...row, locked: next } : row)));
-      } else {
-        setPeople((current) => current.map((row) => (row.id === userId ? { ...row, locked: next } : row)));
-      }
+      await api.patch(`/workspaces/people/${member.userId}`, { locked: nextLocked });
+      setMembers((current) => current.map((row) => (row.userId === member.userId ? { ...row, locked: nextLocked } : row)));
       setLockConfirm(null);
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "Không đổi được trạng thái");
@@ -157,16 +127,11 @@ export function MembersScreen() {
     setBusy(true);
     setError("");
     try {
-      if (deleteConfirm.kind === "account") {
-        await api.delete(`/workspaces/people/${deleteConfirm.person.id}`);
-        setPeople((current) => current.filter((row) => row.id !== deleteConfirm.person.id));
-      } else {
-        await api.delete(`/workspaces/${scope}/members/${deleteConfirm.member.userId}`);
-        setMembers((current) => current.filter((row) => row.userId !== deleteConfirm.member.userId));
-      }
+      await api.delete(`/workspaces/${scope}/members/${deleteConfirm.member.userId}`);
+      setMembers((current) => current.filter((row) => row.userId !== deleteConfirm.member.userId));
       setDeleteConfirm(null);
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Không thực hiện được thao tác xóa");
+      setError(reason instanceof Error ? reason.message : "Không gỡ được thành viên");
     } finally {
       setBusy(false);
     }
@@ -184,11 +149,9 @@ export function MembersScreen() {
 
       <header className="mt-3 flex flex-wrap items-start justify-between gap-4">
         <span className="min-w-0 flex-1">
-          <h1 className="text-[24px] font-semibold leading-8 text-[#172b4d]">Thành viên & Phân quyền</h1>
+          <h1 className="text-[24px] leading-8 font-semibold text-[#172b4d]">Thành viên & Phân quyền</h1>
           <p className="mt-1 text-[14px] text-[#626f86]">
-            {workspaceMode
-              ? `Phân quyền thành viên trong workspace ${selectedWorkspace?.name ?? ""}. Khóa tài khoản vẫn áp dụng toàn hệ thống.`
-              : "Quản lý tài khoản toàn hệ thống. Chọn workspace để xem và phân quyền theo từng không gian."}
+            Phân quyền theo từng workspace. Cùng một người có thể là Thành viên ở workspace này và Trưởng nhóm ở workspace khác.
           </p>
         </span>
         <label className="flex min-w-[260px] flex-col gap-1.5">
@@ -196,9 +159,10 @@ export function MembersScreen() {
           <select
             value={scope}
             onChange={(event) => setScope(event.target.value)}
-            className="h-9 rounded-md border border-[#dfe1e6] bg-white px-3 text-[13px] font-medium text-[#172b4d] outline-none focus:border-[#0c66e4]"
+            disabled={workspaces.length === 0}
+            className="h-9 rounded-md border border-[#dfe1e6] bg-white px-3 text-[13px] font-medium text-[#172b4d] outline-none focus:border-[#0c66e4] disabled:opacity-60"
           >
-            <option value="system">Toàn hệ thống</option>
+            {workspaces.length === 0 ? <option value="">Chưa có workspace</option> : null}
             {workspaces.map((workspace) => (
               <option key={workspace.id} value={workspace.id}>
                 {workspace.name}
@@ -212,12 +176,17 @@ export function MembersScreen() {
       {error ? <p className="mt-3 text-[13px] text-[#ae2e24]">{error}</p> : null}
       {loading ? <p className="mt-6 text-[13px] text-[#626f86]">Đang tải thành viên…</p> : null}
 
-      {!loading ? (
+      {!loading && !scope ? (
+        <p className="mt-6 text-[13px] text-[#626f86]">Chưa có workspace để phân quyền. Hãy tạo workspace trước.</p>
+      ) : null}
+
+      {!loading && scope ? (
         <div className="mt-5 overflow-hidden rounded-xl border border-[#dfe1e6]">
           <div className="flex flex-wrap items-center gap-4 border-b border-[#eef0f3] px-5 py-3 text-[13px] text-[#44546f]">
+            <span className="font-semibold text-[#172b4d]">{selectedWorkspace?.name}</span>
             <span className="inline-flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-[#626f86]" />
-              {rows.length} thành viên
+              {members.length} thành viên
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-[#22a06b]" />
@@ -234,19 +203,19 @@ export function MembersScreen() {
               <tr className="text-[11px] font-bold tracking-wide text-[#7a869a]">
                 <th className="px-5 py-3 font-bold">THÀNH VIÊN</th>
                 <th className="px-3 py-3 font-bold">EMAIL</th>
-                <th className="w-[190px] px-3 py-3 font-bold">{workspaceMode ? "VAI TRÒ WS" : "VAI TRÒ"}</th>
+                <th className="w-[190px] px-3 py-3 font-bold">VAI TRÒ WORKSPACE</th>
                 <th className="w-[160px] px-3 py-3 font-bold">TRẠNG THÁI</th>
                 <th className="w-[110px] px-3 py-3 text-right font-bold">THAO TÁC</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {members.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-5 py-8 text-center text-[13px] text-[#626f86]">
-                    {workspaceMode ? "Workspace chưa có thành viên." : "Chưa có thành viên."}
+                    Workspace chưa có thành viên.
                   </td>
                 </tr>
-              ) : workspaceMode ? (
+              ) : (
                 members.map((member) => {
                   const self = member.userId === user?.id;
                   return (
@@ -285,7 +254,7 @@ export function MembersScreen() {
                             type="button"
                             aria-label={member.locked ? `Mở khóa ${member.name}` : `Khóa ${member.name}`}
                             disabled={self}
-                            onClick={() => setLockConfirm({ person: member, nextLocked: !member.locked })}
+                            onClick={() => setLockConfirm({ member, nextLocked: !member.locked })}
                             className="grid size-8 place-items-center rounded text-[#626f86] hover:bg-[#f7f8f9] disabled:opacity-40"
                           >
                             {member.locked ? <LockOpen size={15} /> : <Lock size={15} />}
@@ -294,62 +263,7 @@ export function MembersScreen() {
                             type="button"
                             aria-label={`Gỡ ${member.name} khỏi workspace`}
                             disabled={self || member.isOwner}
-                            onClick={() => setDeleteConfirm({ kind: "workspace", member })}
-                            className="grid size-8 place-items-center rounded text-[#e2483d] hover:bg-[#ffeceb] disabled:opacity-40"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                people.map((person) => {
-                  const self = person.id === user?.id;
-                  return (
-                    <tr key={person.id} className="border-t border-[#eef0f3]">
-                      <td className="px-5 py-3">
-                        <span className="flex items-center gap-2.5">
-                          <Avatar name={person.name} />
-                          <span className="text-[14px] font-semibold text-[#172b4d]">{person.name}</span>
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-[13px] text-[#44546f]">{person.email}</td>
-                      <td className="px-3 py-3">
-                        <select
-                          aria-label={`Vai trò của ${person.name}`}
-                          value={person.role}
-                          disabled={self}
-                          onChange={(event) => void changeAccountRole(person, event.target.value as Role)}
-                          className={`h-7 rounded-full px-2.5 text-[12px] font-semibold outline-none disabled:opacity-70 ${ROLE_TONE[person.role]}`}
-                        >
-                          {ACCOUNT_ROLES.map((role) => (
-                            <option key={role} value={role}>
-                              {ROLE_LABEL[role]}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-3 py-3">
-                        <StatusBadge locked={person.locked} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            aria-label={person.locked ? `Mở khóa ${person.name}` : `Khóa ${person.name}`}
-                            disabled={self}
-                            onClick={() => setLockConfirm({ person, nextLocked: !person.locked })}
-                            className="grid size-8 place-items-center rounded text-[#626f86] hover:bg-[#f7f8f9] disabled:opacity-40"
-                          >
-                            {person.locked ? <LockOpen size={15} /> : <Lock size={15} />}
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Xóa ${person.name}`}
-                            disabled={self}
-                            onClick={() => setDeleteConfirm({ kind: "account", person })}
+                            onClick={() => setDeleteConfirm({ member })}
                             className="grid size-8 place-items-center rounded text-[#e2483d] hover:bg-[#ffeceb] disabled:opacity-40"
                           >
                             <Trash2 size={15} />
@@ -364,11 +278,11 @@ export function MembersScreen() {
           </table>
 
           <div className="m-4 rounded-lg bg-[#e9f2ff] px-4 py-3">
-            <p className="text-[13px] font-semibold text-[#0c66e4]">Phân quyền theo vai trò</p>
+            <p className="text-[13px] font-semibold text-[#0c66e4]">Phân quyền theo workspace</p>
             <p className="mt-1 text-[13px] leading-5 text-[#44546f]">
-              {workspaceMode
-                ? "Trong workspace có Quản trị viên, Trưởng nhóm và Thành viên. Chủ sở hữu luôn là Quản trị viên. Gỡ khỏi workspace không xóa tài khoản hệ thống."
-                : "Tài khoản hệ thống chỉ có Quản trị viên và Thành viên. Chọn workspace ở trên để gán ghế Trưởng nhóm / Thành viên theo từng không gian."}
+              Vai trò (Quản trị viên / Trưởng nhóm / Thành viên) gắn với từng workspace, không còn “toàn hệ thống”. Đổi
+              workspace ở trên để gán quyền khác nhau cho cùng một người. Khóa tài khoản vẫn chặn đăng nhập toàn hệ
+              thống; gỡ khỏi workspace không xóa tài khoản.
             </p>
           </div>
         </div>
@@ -376,7 +290,7 @@ export function MembersScreen() {
 
       {lockConfirm ? (
         <ConfirmDialog
-          title={lockConfirm.nextLocked ? `Khóa ${lockConfirm.person.name}?` : `Mở khóa ${lockConfirm.person.name}?`}
+          title={lockConfirm.nextLocked ? `Khóa ${lockConfirm.member.name}?` : `Mở khóa ${lockConfirm.member.name}?`}
           body={
             lockConfirm.nextLocked
               ? "Tài khoản bị khóa sẽ không đăng nhập được toàn hệ thống."
@@ -392,17 +306,9 @@ export function MembersScreen() {
 
       {deleteConfirm ? (
         <ConfirmDialog
-          title={
-            deleteConfirm.kind === "account"
-              ? `Xóa ${deleteConfirm.person.name}?`
-              : `Gỡ ${deleteConfirm.member.name} khỏi workspace?`
-          }
-          body={
-            deleteConfirm.kind === "account"
-              ? "Thao tác xóa tài khoản không thể hoàn tác."
-              : "Người này sẽ mất quyền trong workspace; tài khoản hệ thống vẫn giữ nguyên."
-          }
-          confirmLabel={deleteConfirm.kind === "account" ? "Xóa" : "Gỡ khỏi workspace"}
+          title={`Gỡ ${deleteConfirm.member.name} khỏi workspace?`}
+          body="Người này sẽ mất quyền trong workspace hiện tại; tài khoản và quyền ở workspace khác vẫn giữ nguyên."
+          confirmLabel="Gỡ khỏi workspace"
           danger
           busy={busy}
           onCancel={() => setDeleteConfirm(null)}

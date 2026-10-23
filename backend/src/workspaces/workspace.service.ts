@@ -632,6 +632,7 @@ export class WorkspaceService {
     if (user.role === 'ADMIN' && (dto.role && dto.role !== 'ADMIN' || dto.locked)) {
       await this.assertAnotherAdmin(userId);
     }
+    // Vai trò workspace (LEADER/MEMBER/…) quản lý riêng từng workspace — không sync từ User.role.
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -640,12 +641,6 @@ export class WorkspaceService {
       },
       select: { id: true, name: true, email: true, role: true, locked: true },
     });
-    if (dto.role) {
-      await this.prisma.workspaceMember.updateMany({
-        where: { userId, status: 'ACTIVE' },
-        data: { role: dto.role },
-      });
-    }
     return updated;
   }
 
