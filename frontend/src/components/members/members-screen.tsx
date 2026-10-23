@@ -61,7 +61,7 @@ export function MembersScreen() {
   useEffect(() => {
     if (user?.role !== "ADMIN") return;
     api
-      .get<{ items: WorkspaceOption[] }>("/workspaces?page=1&pageSize=100&sort=name&order=asc")
+      .get<{ items: WorkspaceOption[] }>("/workspaces?page=1&pageSize=50&sort=name&order=asc")
       .then((response) => {
         const active = response.data.items.filter((row) => row.status !== "ARCHIVED");
         setWorkspaces(active);
